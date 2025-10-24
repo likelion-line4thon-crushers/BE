@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>발표자 방 만들기</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{ --fg:#0b1020; --mut:#667085; --pri:#3b82f6; --ok:#10b981; --err:#ef4444; }
+    *{ box-sizing:border-box } body{ font-family: ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:16px; color:var(--fg) }
+    h1{ font-size:20px; margin:0 0 12px }
+    .card{ border:1px solid #e5e7eb; border-radius:14px; padding:14px; margin:10px 0; box-shadow:0 1px 2px rgba(0,0,0,.04) }
+    label{ display:block; font-size:12px; color:var(--mut); margin-top:8px }
+    input, textarea, select{ width:100%; padding:10px; margin-top:6px; border:1px solid #e5e7eb; border-radius:10px; font-size:14px }
+    .row{ display:grid; grid-template-columns:1fr 1fr; gap:10px }
+    .btn{ display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:10px; border:1px solid #e5e7eb; background:#fff; cursor:pointer; font-weight:600 }
+    .btn.primary{ background:var(--pri); color:#fff; border-color:var(--pri) }
+    .btn.small{ padding:8px 10px; font-size:12px }
+    .pill{ display:inline-flex; gap:6px; align-items:center; background:#f8fafc; border:1px solid #e5e7eb; padding:6px 10px; border-radius:999px; font-size:12px }
+    .mono{ font-family: ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; word-break:break-all }
+    .hr{ height:1px; background:#eef2f7; margin:12px 0 }
+    .qrWrap{ display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap }
+    img.qr{ width:180px; height:180px; border:1px dashed #e5e7eb; border-radius:12px }
+  </style>
+</head>
+<body>
+<h1>발표자 방 만들기</h1>
+<p style="font-size:12px;color:#667085">
+  이 페이지는 <b>RoomController</b> 스펙에 맞춰져 있습니다. (POST <code>/api/rooms</code> → id, code, joinUrl, ws, qr, token, key)
+</p>
+
+<!-- API 설정 -->
+<div class="card">
+  <div class="row">
+    <div>
+      <label>API Base URL</label>
+      <input id="apiBase" value="http://localhost:8080" />
+    </div>
+    <div>
+      <label>방 생성 엔드포인트 (POST)</label>
+      <input id="endpoint" value="/api/rooms" />
+    </div>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <div>
+      <label>관리용 x-api-key (선택)</label>
+      <input id="adminKey" placeholder="운영에서만 필요하면 입력" />
+    </div>
+    <div>
+      <label>타임아웃(ms)</label>
+      <input id="timeout" type="number" value="15000" />
+    </div>
+  </div>
+</div>
+
+<!-- 요청 본문(옵션) -->
+<div class="card">
+  <h2 style="margin:0 0 8px;font-size:16px">요청 본문</h2>
+  <div class="row">
+    <div>
+      <label>방 제목(title)</label>
+      <input id="title" value="Demo Session" />
+    </div>
+    <div>
+      <label>최대 청중(limits.maxAudience)</label>
+      <input id="maxAudience" type="number" value="1000" />
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label>이모지(reactionsEnabled)</label>
+      <select id="reactionsEnabled"><option>true</option><option>false</option></select>
+    </div>
+    <div>
+      <label>Q&A(qnaEnabled)</label>
+      <select id="qnaEnabled"><option>true</option><option>false</option></select>
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label>타이머(timerEnabled)</label>
+      <select id="timerEnabled"><option>true</option><option>false</option></select>
+    </div>
+    <div>
+      <label>실시간 피드백(realtimeFeedbackEnabled)</label>
+      <select id="rtfbEnabled"><option>false</option><option>true</option></select>
+    </div>
+  </div>
+  <div style="margin-top:10px">
+    <button class="btn primary" id="btnCreate">방 생성</button>
+    <span id="status" class="pill" style="margin-left:8px; display:none"></span>
+  </div>
+</div>
+
+<!-- 결과 -->
+<div class="card" id="resultCard" style="display:none">
+  <h2 style="margin:0 0 8px;font-size:16px">생성 결과</h2>
+
+  <!-- HTTP 응답 요약 -->
+  <div class="pill" id="httpSummary" style="margin-bottom:10px; display:none"></div>
+
+  <!-- 필드 표시 -->
+  <div style="display:grid;grid-template-columns:140px 1fr;gap:8px;align-items:center">
+    <div>roomId</div><div class="mono" id="roomId"></div>
+    <div>code</div><div class="mono" id="code"></div>
+    <div>joinUrl</div><div class="mono" id="joinUrl"></div>
+    <div>wsUrl</div><div class="mono" id="wsUrl"></div>
+    <div>presenterToken</div><div class="mono" id="presenterToken"></div>
+    <div>presenterKey</div><div class="mono" id="presenterKey"></div>
+  </div>
+
+  <div class="hr"></div>
+
+  <!-- 성공/유효성 체크 -->
+  <div id="checks" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div class="pill" id="chkHttp">HTTP 상태</div>
+    <div class="pill" id="chkRoom">roomId/코드/URL</div>
+    <div class="pill" id="chkWS">WebSocket URL</div>
+    <div class="pill" id="chkPresenter">발표자 토큰/키</div>
+  </div>
+
+  <div class="hr"></div>
+
+  <!-- QR & RAW -->
+  <div class="qrWrap">
+    <div>
+      <img id="qr" class="qr" alt="Join QR"/>
+      <div style="font-size:12px;color:#667085;margin-top:6px">참여용 QR (base64 PNG)</div>
+    </div>
+    <div style="flex:1;min-width:260px">
+      <label>RAW JSON 응답</label>
+      <pre id="rawOut" class="mono" style="font-size:12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px;white-space:pre-wrap"></pre>
+      <label style="margin-top:8px">HTTP 응답 헤더</label>
+      <pre id="hdrOut" class="mono" style="font-size:12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px;white-space:pre-wrap"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+  const $ = (id)=>document.getElementById(id);
+  const statusPill = $('status');
+  const setStatus = (t, ok=true)=>{
+    statusPill.style.display='inline-flex';
+    statusPill.textContent = t;
+    statusPill.style.color = ok ? '#10b981' : '#ef4444';
+    statusPill.style.borderColor = ok ? '#10b981' : '#ef4444';
+  };
+
+  // 요청 본문
+  function buildPayload(){
+    return {
+      title: $('title').value.trim(),
+      options: {
+        reactionsEnabled: $('reactionsEnabled').value === 'true',
+        qnaEnabled: $('qnaEnabled').value === 'true',
+        realtimeFeedbackEnabled: $('rtfbEnabled').value === 'true',
+        timerEnabled: $('timerEnabled').value === 'true'
+      },
+      limits: {
+        maxAudience: Number($('maxAudience').value || 1000)
+      }
+    };
+  }
+
+  // 방 생성
+  $('btnCreate').onclick = async ()=>{
+    const base = $('apiBase').value.trim().replace(/\/+$/,'');
+    const endpoint = $('endpoint').value.trim();
+    const adminKey = $('adminKey').value.trim();
+    const timeout = Number($('timeout').value || 15000);
+    const url = base + endpoint;
+
+    setStatus('요청 중...');
+    try{
+      const ctrl = new AbortController();
+      const startedAt = performance.now();
+      const to = setTimeout(()=>ctrl.abort(), timeout);
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type':'application/json',
+          ...(adminKey ? {'x-api-key': adminKey} : {})
+        },
+        body: JSON.stringify(buildPayload()),
+        signal: ctrl.signal
+      });
+      clearTimeout(to);
+
+      const elapsed = Math.round(performance.now() - startedAt);
+      const resText = await res.clone().text();
+      let json;
+      try { json = JSON.parse(resText); } catch { json = { parseError: true, raw: resText }; }
+
+      render(json, {
+        ok: res.ok,
+        status: res.status,
+        statusText: res.statusText,
+        elapsedMs: elapsed,
+        headers: Array.from(res.headers.entries())
+      });
+
+      setStatus(res.ok ? '성공' : `실패 ${res.status}`, res.ok);
+      if(!res.ok){
+        alert(`방 생성 실패 (${res.status})\n${resText}`);
+      }
+    }catch(e){
+      setStatus('네트워크/타임아웃', false);
+      render({ error: String(e) }, {
+        ok: false, status: 0, statusText: 'NETWORK', elapsedMs: 0, headers: []
+      });
+    }
+  };
+
+  // 결과 렌더
+  function render(d, meta){
+    $('resultCard').style.display = '';
+
+    // 스펙(id, code, joinUrl, ws, qr, token, key)과 네가 원하는 키(roomId, wsUrl, qrPngBase64, presenterToken, presenterKey) 모두 대응
+    const roomId = d.roomId ?? d.id ?? '';
+    const code = d.code ?? '';
+    const joinUrl = d.joinUrl ?? '';
+    const wsUrl = d.wsUrl ?? d.ws ?? '';
+    const token = d.presenterToken ?? d.token ?? '';
+    const key = d.presenterKey ?? d.key ?? '';
+    const qrB64 = d.qrPngBase64 ?? d.qr ?? '';
+
+    $('roomId').textContent = roomId;
+    $('code').textContent = code;
+    $('joinUrl').textContent = joinUrl;
+    $('wsUrl').textContent = wsUrl;
+    $('presenterToken').textContent = token;
+    $('presenterKey').textContent = key;
+
+    const qrEl = $('qr');
+    if(qrB64){ qrEl.src = `data:image/png;base64,${qrB64}`; qrEl.alt = 'join QR'; }
+    else { qrEl.removeAttribute('src'); qrEl.alt = 'QR 없음'; }
+
+    // RAW JSON / 헤더
+    $('rawOut').textContent = JSON.stringify(d, null, 2);
+    const hdrLines = (meta?.headers || []).map(([k,v]) => `${k}: ${v}`).join('\n');
+    $('hdrOut').textContent = hdrLines || '(no headers)';
+
+    // HTTP 요약
+    const httpSummary = $('httpSummary');
+    httpSummary.style.display = 'inline-flex';
+    httpSummary.textContent = meta?.ok
+        ? `✅ ${meta.status} ${meta.statusText} · ${meta.elapsedMs} ms`
+        : `❌ ${meta?.status || '0'} ${meta?.statusText || ''} · ${meta?.elapsedMs ?? 0} ms`;
+    httpSummary.style.color = meta?.ok ? '#10b981' : '#ef4444';
+    httpSummary.style.borderColor = meta?.ok ? '#10b981' : '#ef4444';
+
+    // 체크 배지
+    const setBadge = (elId, good, textOk, textFail) => {
+      const el = $(elId);
+      el.textContent = good ? `✅ ${textOk}` : `❌ ${textFail}`;
+      el.style.color = good ? '#10b981' : '#ef4444';
+      el.style.borderColor = good ? '#10b981' : '#ef4444';
+    };
+    setBadge('chkHttp', meta?.ok, 'HTTP OK', `HTTP 오류 (${meta?.status || 0})`);
+    setBadge('chkRoom', !!(roomId && code && joinUrl), 'roomId/code/joinUrl 확인', '필수 필드 누락');
+    setBadge('chkWS', !!wsUrl, 'wsUrl 확인', 'wsUrl 없음');
+    setBadge('chkPresenter', !!(token && key), 'presenterToken/key 확인', '토큰/키 없음');
+  }
+</script>
+</body>
+</html>
