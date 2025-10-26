@@ -10,7 +10,8 @@ import java.time.Instant;
 @Builder
 public class Room {
   private String id;          // UUID
-  private String code;        // 6자리 초대코드
+  private String code;        // 6자리 코드
+  private Integer count;
   private RoomOptions options;
   private Instant createdAt;
 }

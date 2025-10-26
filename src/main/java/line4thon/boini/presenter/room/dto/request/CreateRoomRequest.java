@@ -10,7 +10,8 @@ import lombok.*;
 @AllArgsConstructor
 @Builder
 public class CreateRoomRequest {
-
   @NotNull
   private RoomOptions options;
+  @NotNull
+  private Integer count;
 }
