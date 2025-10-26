@@ -1,65 +1,58 @@
 package line4thon.boini.presenter.room.service;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.util.UUID;
-import line4thon.boini.global.common.exception.CustomException;
-import line4thon.boini.global.common.exception.GlobalErrorCode;
-import line4thon.boini.global.jwt.service.JwtService;
+import line4thon.boini.global.config.AppProperties;
 import line4thon.boini.presenter.room.dto.request.CreateRoomRequest;
-import line4thon.boini.presenter.room.model.Room;
-import line4thon.boini.presenter.room.repository.RoomRepository;
+import line4thon.boini.presenter.room.dto.response.CreateRoomResponse;
+import line4thon.boini.presenter.room.service.CodeService.CodeReservation;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.RandomStringUtils;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RoomService {
 
-  // 방 데이터의 기본 보존 시간 (24시간)
-  private static final long TTL_SECONDS = 24 * 60 * 60;
-
-  private final RoomRepository repository;
-  private final StringRedisTemplate srt;
-  private final JwtService jwt;
+  private final CodeService codeService;                 // [ADDED] 코드 예약/확정/해제 담당
+  private final QrService qrService;                     // [ADDED] QR 생성 담당
+  private final PresenterAuthService presenterAuth;      // [ADDED] 발표자 토큰/키 발급
+  private final AppProperties props;                     // [ADDED] URL/WS/TTL 등 설정 접근
 
   // 발표자가 새로운 방을 생성할 때 호출
-  public Room createRoom(CreateRoomRequest request) {
+  public CreateRoomResponse createRoom(CreateRoomRequest request) {
     String roomId = UUID.randomUUID().toString();
-    String code = reserveUniqueCode(roomId);
 
-    Room room = Room.builder()
-        .id(roomId)
-        .code(code)
-        .options(request.getOptions())
-        .createdAt(Instant.now())
-        .build();
+    // 코드 예약 (충돌 시 내부 재시도)
+    CodeReservation reserved = codeService.reserveUniqueCode(roomId);
 
-    repository.save(room);
-    repository.setCodeMapping(code, roomId, TTL_SECONDS);
-    return room;
-  }
+    try {
+      // join URL 및 QR 생성
+      String joinUrl = props.getUrls().getJoinBase() + reserved.code(); // ex) https://.../j/JTJ7V3
+      String qrB64   = qrService.toBase64Png(joinUrl);
 
-  // 중복되지 않는 6자리 초대코드를 생성하고 Redis에 등록
-  private String reserveUniqueCode(String roomId) {
-    for (int i = 0; i < 12; i++) {  // 최대 12번 시도
-      String c = RandomStringUtils.random(6, "ABCDEFGHJKLMNPQRSTUVWXYZ23456789");
-      // 해당 코드가 비어 있으면 등록 (code → roomId)
-      if (Boolean.TRUE.equals(srt.opsForValue().setIfAbsent("room:code:" + c, roomId,
-          Duration.ofSeconds(TTL_SECONDS))))
-        return c;   // 성공 시 코드 반환
+      // 발표자 토큰/재발급 키 발급
+      String presenterToken = presenterAuth.issuePresenterToken(roomId);
+      String presenterKey   = presenterAuth.generateAndStorePresenterKey(roomId);
+
+      // 모든 부가 작업 성공 시 확정
+      codeService.confirmMapping(reserved, roomId);
+
+      return new CreateRoomResponse(
+          roomId,
+          reserved.code(),
+          joinUrl,
+          props.getUrls().getWs(),
+          request.getCount(),
+          qrB64,
+          presenterToken,
+          presenterKey
+      );
+    } catch (RuntimeException e) {
+      // 중간 실패 시 예약 해제
+      log.warn("방 생성 중 오류 발생 — 예약된 코드를 해제합니다. roomId={}, code={}", roomId, reserved.code(), e);
+      codeService.release(reserved);
+      throw e;
     }
-    // 모든 시도가 실패하면 예외 발생
-    throw new CustomException(GlobalErrorCode.INTERNAL_SERVER_ERROR);
-  }
-
-  // 발표 종료 시 TTL을 10분으로 줄여 Redis 데이터를 조기 만료시킴
-  public void endRoom(String roomId) {
-    Duration grace = Duration.ofMinutes(10);
-
-    srt.getRequiredConnectionFactory().getConnection()
-        .keyCommands().expire(("room:" + roomId).getBytes(), grace);
   }
 }
