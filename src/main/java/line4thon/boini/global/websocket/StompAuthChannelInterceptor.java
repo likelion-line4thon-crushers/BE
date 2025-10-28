@@ -2,6 +2,7 @@ package line4thon.boini.global.websocket;
 
 import io.jsonwebtoken.Claims;
 import line4thon.boini.global.jwt.service.JwtService;
+import line4thon.boini.global.websocket.exception.StompErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.Message;
@@ -75,7 +76,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
 
     } catch (Throwable t) {
       log.error("💥 [STOMP] {} 처리 중 내부 오류: {}", cmd, t.toString(), t);
-      throw new MessagingException("internal_error", t);
+      throw new MessagingException(StompErrorCode.WS_INTERNAL.getMessage(), t);
     }
   }
 
@@ -92,7 +93,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     if (authzRaw == null) authzRaw = first(acc, "authorization");
 
     if (authzRaw == null || !authzRaw.toLowerCase().startsWith("bearer ")) {
-      throw new MessagingException("Authorization 헤더가 없습니다.");
+      throw new MessagingException(StompErrorCode.WS_JWT_MISSING.getMessage());
     }
 
     // "Bearer " 이후 토큰 추출
@@ -112,7 +113,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     String subject = Optional.ofNullable(claims.get("sub", String.class)).orElse("anon");
 
     if (role == null || roomId == null) {
-      throw new MessagingException("토큰에 role 또는 roomId 정보가 없습니다.");
+      throw new MessagingException(StompErrorCode.WS_JWT_CLAIM_INVALID.getMessage());
     }
 
     String granted = "presenter".equalsIgnoreCase(role) ? ROLE_PRESENTER : ROLE_AUDIENCE;
@@ -128,7 +129,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
       attrs.put(ATTR_SUB, subject);
     }
 
-    log.info("🔐 [STOMP] CONNECT 성공: 사용자={}, 역할={}, 방ID={}", subject, role, roomId);
+    log.info("[STOMP] CONNECT 성공: 사용자={}, 역할={}, 방ID={}", subject, role, roomId);
   }
 
   /**
@@ -149,20 +150,20 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
       String authzRaw = Optional.ofNullable(first(acc, "Authorization"))
           .orElse(first(acc, "authorization"));
       if (authzRaw == null || !authzRaw.toLowerCase().startsWith("bearer ")) {
-        throw new MessagingException("인증 정보가 없습니다.");
+        throw new MessagingException(StompErrorCode.WS_JWT_MISSING.getMessage());
       }
       String token = authzRaw.substring("bearer ".length()).trim();
 
       Claims claims;
       try { claims = jwt.parse(token); }
       catch (Exception e) {
-        throw new MessagingException("유효하지 않은 토큰입니다.");
+        throw new MessagingException(StompErrorCode.WS_JWT_INVALID.getMessage(), e);
       }
 
       role   = claims.get("role", String.class);
       myRoom = claims.get("roomId", String.class);
       if (role == null || myRoom == null)
-        throw new MessagingException("인증 실패");
+        throw new MessagingException(StompErrorCode.WS_JWT_CLAIM_INVALID.getMessage());
 
       if (attrs != null) {
         attrs.put(ATTR_ROLE, role);
@@ -178,15 +179,15 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
 
     // 동일 방 검증
     if (destRoomId != null && !Objects.equals(destRoomId, myRoom)) {
-      throw new MessagingException("다른 방으로 접근할 수 없습니다.");
+      throw new MessagingException(StompErrorCode.WS_ROOM_MISMATCH.getMessage());
     }
 
     // 역할별 제어 채널 제한
     if (dest.startsWith("/app/presenter/") && !"presenter".equalsIgnoreCase(role)) {
-      throw new MessagingException("발표자 전용 채널입니다.");
+      throw new MessagingException(StompErrorCode.WS_FORBIDDEN.getMessage());
     }
     if (dest.startsWith("/app/audience/") && !"audience".equalsIgnoreCase(role)) {
-      throw new MessagingException("청중 전용 채널입니다.");
+      throw new MessagingException(StompErrorCode.WS_FORBIDDEN.getMessage());
     }
 
     log.debug("[STOMP] {} 승인됨: 역할={}, 방={}", acc.getCommand(), role, myRoom);
