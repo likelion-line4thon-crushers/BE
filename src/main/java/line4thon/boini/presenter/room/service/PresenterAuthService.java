@@ -1,11 +1,13 @@
 package line4thon.boini.presenter.room.service;
 
 import line4thon.boini.global.config.AppProperties;
+import line4thon.boini.presenter.room.exception.PresenterErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import line4thon.boini.global.common.exception.CustomException;
 import line4thon.boini.global.common.exception.GlobalErrorCode;
 import line4thon.boini.global.jwt.service.JwtService;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -28,14 +30,31 @@ public class PresenterAuthService {
     String key = generatePresenterKey();
     String hash = sha256Hex(key);
     long ttlSec = props.getRoom().getTtlSeconds();
-    srt.opsForValue().set(presenterKeyHashKey(roomId), hash, Duration.ofSeconds(ttlSec));
+    try {                                                                  // [FIX] Redis 예외 래핑
+      srt.opsForValue().set(presenterKeyHashKey(roomId), hash, Duration.ofSeconds(ttlSec));
+    } catch (DataAccessException e) {
+      log.error("발표자 키 해시 저장 실패: roomId={}, err={}", roomId, e.toString());
+      throw new CustomException(PresenterErrorCode.REDIS_ERROR);
+    }
     log.debug("발표자 키 해시 저장 완료: roomId={} / TTL={}초", roomId, ttlSec);
     return key;
   }
 
   // presenterKey 검증 (제공받은 원문을 해시해 비교)
   public boolean verifyPresenterKey(String roomId, String providedKey) {
-    String expect = srt.opsForValue().get(presenterKeyHashKey(roomId));
+    validateRoomId(roomId);                                                // [FIX]
+    if (providedKey == null || providedKey.isBlank()) {                    // [FIX] 입력값 검증
+      log.warn("발표자 키가 비어있음: roomId={}", roomId);
+      return false;
+    }
+    String expect;
+    try {                                                                  // [FIX] Redis 예외 래핑
+      expect = srt.opsForValue().get(presenterKeyHashKey(roomId));
+    } catch (DataAccessException e) {
+      log.error("발표자 키 해시 조회 실패: roomId={}, err={}", roomId, e.toString());
+      throw new CustomException(PresenterErrorCode.REDIS_ERROR);
+    }
+
     if (expect == null) {
       log.warn("발표자 키 해시가 존재하지 않거나 만료됨: roomId={}", roomId);
       return false;
@@ -51,16 +70,23 @@ public class PresenterAuthService {
 
   // 발표자용 JWT 발급 (role=presenter).
   public String issuePresenterToken(String roomId) {
+    validateRoomId(roomId);                                                // [FIX]
     long hours = props.getJwt().getPresenterTtlHours();
-    log.info("발표자용 JWT 발급 완료: roomId={} / 유효시간={}시간", roomId, hours);
-    return jwt.issueJoinToken(roomId, "presenter", java.time.Duration.ofHours(hours));
+    try {                                                                  // [FIX] 발급 실패를 명확한 코드로 래핑
+      String token = jwt.issueJoinToken(roomId, "presenter", Duration.ofHours(hours));
+      log.info("발표자용 JWT 발급 완료: roomId={} / 유효시간={}시간", roomId, hours);
+      return token;
+    } catch (Exception e) {
+      log.error("발표자용 JWT 발급 실패: roomId={}, err={}", roomId, e.toString());
+      throw new CustomException(PresenterErrorCode.JWT_ISSUE_FAILED);
+    }
   }
 
   // presenterKey 검증 후 발표자 JWT 재발급. 실패 시 UNAUTHORIZED.
   public String refreshPresenterToken(String roomId, String presenterKey) {
     // 하위호환 유지: 내부적으로 회전 없이 재발급만 수행하도록 신규 메서드 위임
     RefreshResult res = refreshTokenAndMaybeRotate(roomId, presenterKey, false); // [ADDED]
-    return res.token(); // [ADDED]
+    return res.token();
   }
 
   // presenterKey 검증 후, (옵션) 키 회전까지 수행하고 토큰을 반환
@@ -131,5 +157,12 @@ public class PresenterAuthService {
       r |= (ca ^ cb);
     }
     return r == 0;
+  }
+
+  private void validateRoomId(String roomId) {
+    if (roomId == null || roomId.isBlank()) {
+      log.warn("유효하지 않은 roomId 입력: {}", roomId);
+      throw new CustomException(PresenterErrorCode.INVALID_ROOM_ID);
+    }
   }
 }
