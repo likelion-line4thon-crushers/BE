@@ -14,10 +14,10 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class RoomService {
 
-  private final CodeService codeService;                 // [ADDED] 코드 예약/확정/해제 담당
-  private final QrService qrService;                     // [ADDED] QR 생성 담당
-  private final PresenterAuthService presenterAuth;      // [ADDED] 발표자 토큰/키 발급
-  private final AppProperties props;                     // [ADDED] URL/WS/TTL 등 설정 접근
+  private final CodeService codeService;                 // 코드 예약/확정/해제 담당
+  private final QrService qrService;                     // QR 생성 담당
+  private final PresenterAuthService presenterAuth;      //  발표자 토큰/키 발급
+  private final AppProperties props;                     // URL/WS/TTL 등 설정 접근
 
   // 발표자가 새로운 방을 생성할 때 호출
   public CreateRoomResponse createRoom(CreateRoomRequest request) {
