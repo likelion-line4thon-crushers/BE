@@ -30,7 +30,7 @@ public class PresenterAuthService {
     String key = generatePresenterKey();
     String hash = sha256Hex(key);
     long ttlSec = props.getRoom().getTtlSeconds();
-    try {                                                                  // [FIX] Redis 예외 래핑
+    try {
       srt.opsForValue().set(presenterKeyHashKey(roomId), hash, Duration.ofSeconds(ttlSec));
     } catch (DataAccessException e) {
       log.error("발표자 키 해시 저장 실패: roomId={}, err={}", roomId, e.toString());
@@ -42,13 +42,13 @@ public class PresenterAuthService {
 
   // presenterKey 검증 (제공받은 원문을 해시해 비교)
   public boolean verifyPresenterKey(String roomId, String providedKey) {
-    validateRoomId(roomId);                                                // [FIX]
-    if (providedKey == null || providedKey.isBlank()) {                    // [FIX] 입력값 검증
+    validateRoomId(roomId);
+    if (providedKey == null || providedKey.isBlank()) {
       log.warn("발표자 키가 비어있음: roomId={}", roomId);
       return false;
     }
     String expect;
-    try {                                                                  // [FIX] Redis 예외 래핑
+    try {
       expect = srt.opsForValue().get(presenterKeyHashKey(roomId));
     } catch (DataAccessException e) {
       log.error("발표자 키 해시 조회 실패: roomId={}, err={}", roomId, e.toString());
@@ -70,9 +70,9 @@ public class PresenterAuthService {
 
   // 발표자용 JWT 발급 (role=presenter).
   public String issuePresenterToken(String roomId) {
-    validateRoomId(roomId);                                                // [FIX]
+    validateRoomId(roomId);
     long hours = props.getJwt().getPresenterTtlHours();
-    try {                                                                  // [FIX] 발급 실패를 명확한 코드로 래핑
+    try {
       String token = jwt.issueJoinToken(roomId, "presenter", Duration.ofHours(hours));
       log.info("발표자용 JWT 발급 완료: roomId={} / 유효시간={}시간", roomId, hours);
       return token;
@@ -85,7 +85,7 @@ public class PresenterAuthService {
   // presenterKey 검증 후 발표자 JWT 재발급. 실패 시 UNAUTHORIZED.
   public String refreshPresenterToken(String roomId, String presenterKey) {
     // 하위호환 유지: 내부적으로 회전 없이 재발급만 수행하도록 신규 메서드 위임
-    RefreshResult res = refreshTokenAndMaybeRotate(roomId, presenterKey, false); // [ADDED]
+    RefreshResult res = refreshTokenAndMaybeRotate(roomId, presenterKey, false);
     return res.token();
   }
 
