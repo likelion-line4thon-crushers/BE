@@ -1,7 +1,7 @@
 package line4thon.boini.presenter.room.repository;
 
 import lombok.RequiredArgsConstructor;
-import line4thon.boini.presenter.room.model.Room;
+import line4thon.boini.presenter.room.entity.Room;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Repository;

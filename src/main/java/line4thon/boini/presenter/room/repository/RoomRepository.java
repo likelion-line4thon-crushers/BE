@@ -1,6 +1,6 @@
 package line4thon.boini.presenter.room.repository;
 
-import line4thon.boini.presenter.room.model.Room;
+import line4thon.boini.presenter.room.entity.Room;
 import java.util.Optional;
 
 public interface RoomRepository {

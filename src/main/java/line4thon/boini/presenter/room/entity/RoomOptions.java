@@ -1,4 +1,4 @@
-package line4thon.boini.presenter.room.model;
+package line4thon.boini.presenter.room.entity;
 
 import lombok.*;
 
