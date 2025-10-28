@@ -29,7 +29,7 @@ public class PresenterAuthService {
     String hash = sha256Hex(key);
     long ttlSec = props.getRoom().getTtlSeconds();
     srt.opsForValue().set(presenterKeyHashKey(roomId), hash, Duration.ofSeconds(ttlSec));
-    log.debug("PresenterKey hash stored roomId={} ttl={}s", roomId, ttlSec);
+    log.debug("발표자 키 해시 저장 완료: roomId={} / TTL={}초", roomId, ttlSec);
     return key;
   }
 
@@ -37,24 +37,50 @@ public class PresenterAuthService {
   public boolean verifyPresenterKey(String roomId, String providedKey) {
     String expect = srt.opsForValue().get(presenterKeyHashKey(roomId));
     if (expect == null) {
-      log.warn("PresenterKey hash not found (expired?) roomId={}", roomId);
+      log.warn("발표자 키 해시가 존재하지 않거나 만료됨: roomId={}", roomId);
       return false;
     }
-    return slowEquals(expect, sha256Hex(providedKey));
+    boolean match = slowEquals(expect, sha256Hex(providedKey));
+    if (!match) {
+      log.warn("발표자 키 불일치: roomId={}", roomId);
+    } else {
+      log.info("발표자 키 검증 성공: roomId={}", roomId);
+    }
+    return match;
   }
 
   // 발표자용 JWT 발급 (role=presenter).
   public String issuePresenterToken(String roomId) {
     long hours = props.getJwt().getPresenterTtlHours();
+    log.info("발표자용 JWT 발급 완료: roomId={} / 유효시간={}시간", roomId, hours);
     return jwt.issueJoinToken(roomId, "presenter", java.time.Duration.ofHours(hours));
   }
 
   // presenterKey 검증 후 발표자 JWT 재발급. 실패 시 UNAUTHORIZED.
   public String refreshPresenterToken(String roomId, String presenterKey) {
+    // 하위호환 유지: 내부적으로 회전 없이 재발급만 수행하도록 신규 메서드 위임
+    RefreshResult res = refreshTokenAndMaybeRotate(roomId, presenterKey, false); // [ADDED]
+    return res.token(); // [ADDED]
+  }
+
+  // presenterKey 검증 후, (옵션) 키 회전까지 수행하고 토큰을 반환
+  // rotate=true 이면 새 presenterKey도 함께 반환된다.
+  public RefreshResult refreshTokenAndMaybeRotate(String roomId, String presenterKey, boolean rotate) {
     if (!verifyPresenterKey(roomId, presenterKey)) {
       throw new CustomException(GlobalErrorCode.UNAUTHORIZED);
     }
-    return issuePresenterToken(roomId);
+
+    String token = issuePresenterToken(roomId);
+    String rotated = null;
+
+    if (rotate) {
+      rotated = rotatePresenterKey(roomId);
+      log.info("발표자 토큰 재발급 + 키 회전 완료: roomId={}", roomId);
+    } else {
+      log.info("발표자 토큰 재발급 완료(회전 없음): roomId={}", roomId);
+    }
+
+    return new RefreshResult(token, rotated);
   }
 
   // 재발급 성공 시 키 회전: 새 키를 발급하고 해시를 교체하여 보안 강화
@@ -63,15 +89,19 @@ public class PresenterAuthService {
     String newHash = sha256Hex(newKey);
     long ttlSec = props.getRoom().getTtlSeconds();
     srt.opsForValue().set(presenterKeyHashKey(roomId), newHash, java.time.Duration.ofSeconds(ttlSec));
-    log.info("PresenterKey rotated roomId={}", roomId);
+    log.info("발표자 키 회전 완료: roomId={} / TTL={}초", roomId, ttlSec);
     return newKey;
   }
 
+  // 토큰 + (선택적) 회전된 presenterKey를 담는 응답 레코드
+  public record RefreshResult(String token, String rotatedPresenterKey) {}
+
+  // Redis 키 이름 생성 (room:<roomId>:presenterKeyHash)
   private String presenterKeyHashKey(String roomId) {
     return "room:" + roomId + ":presenterKeyHash";
   }
 
-  // 충분히 긴 랜덤 키(원문). UI/네트워크에 안전히 실어 나르기 쉬운 형태.
+  // 충분히 긴 랜덤 키(원문).
   private String generatePresenterKey() {
     // UUID 2개를 붙여 64 hex 길이(하이픈 제거). 필요하면 더 길게 해도 OK.
     return UUID.randomUUID().toString().replace("-", "")
@@ -87,7 +117,7 @@ public class PresenterAuthService {
       for (byte b : d) sb.append(String.format("%02x", b));
       return sb.toString();
     } catch (Exception e) {
-      throw new RuntimeException("Failed to hash presenterKey", e);
+      throw new RuntimeException("발표자 키 해시 처리 중 오류가 발생했습니다.", e);
     }
   }
 
