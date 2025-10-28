@@ -1,6 +1,7 @@
 package line4thon.boini.global.websocket;
 
 import io.jsonwebtoken.Claims;
+import line4thon.boini.global.jwt.exception.JwtErrorCode;
 import line4thon.boini.global.jwt.service.JwtService;
 import line4thon.boini.global.websocket.exception.StompErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -75,7 +76,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
       throw ex;
 
     } catch (Throwable t) {
-      log.error("💥 [STOMP] {} 처리 중 내부 오류: {}", cmd, t.toString(), t);
+      log.error("[STOMP] {} 처리 중 내부 오류: {}", cmd, t.toString(), t);
       throw new MessagingException(StompErrorCode.WS_INTERNAL.getMessage(), t);
     }
   }
@@ -93,7 +94,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     if (authzRaw == null) authzRaw = first(acc, "authorization");
 
     if (authzRaw == null || !authzRaw.toLowerCase().startsWith("bearer ")) {
-      throw new MessagingException(StompErrorCode.WS_JWT_MISSING.getMessage());
+      throw new MessagingException(JwtErrorCode.JWT_MISSING.getMessage());
     }
 
     // "Bearer " 이후 토큰 추출
@@ -113,7 +114,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     String subject = Optional.ofNullable(claims.get("sub", String.class)).orElse("anon");
 
     if (role == null || roomId == null) {
-      throw new MessagingException(StompErrorCode.WS_JWT_CLAIM_INVALID.getMessage());
+      throw new MessagingException(JwtErrorCode.JWT_CLAIM_INVALID.getMessage());
     }
 
     String granted = "presenter".equalsIgnoreCase(role) ? ROLE_PRESENTER : ROLE_AUDIENCE;
@@ -150,20 +151,20 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
       String authzRaw = Optional.ofNullable(first(acc, "Authorization"))
           .orElse(first(acc, "authorization"));
       if (authzRaw == null || !authzRaw.toLowerCase().startsWith("bearer ")) {
-        throw new MessagingException(StompErrorCode.WS_JWT_MISSING.getMessage());
+        throw new MessagingException(JwtErrorCode.JWT_MISSING.getMessage());
       }
       String token = authzRaw.substring("bearer ".length()).trim();
 
       Claims claims;
       try { claims = jwt.parse(token); }
       catch (Exception e) {
-        throw new MessagingException(StompErrorCode.WS_JWT_INVALID.getMessage(), e);
+        throw new MessagingException(JwtErrorCode.JWT_INVALID.getMessage(), e);
       }
 
       role   = claims.get("role", String.class);
       myRoom = claims.get("roomId", String.class);
       if (role == null || myRoom == null)
-        throw new MessagingException(StompErrorCode.WS_JWT_CLAIM_INVALID.getMessage());
+        throw new MessagingException(JwtErrorCode.JWT_CLAIM_INVALID.getMessage());
 
       if (attrs != null) {
         attrs.put(ATTR_ROLE, role);
