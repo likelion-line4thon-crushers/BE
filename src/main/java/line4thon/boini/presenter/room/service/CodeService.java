@@ -31,11 +31,13 @@ public class CodeService {
   private static final String RESERVED  = "RESERVED";
   private static final String CONFIRMED = "CONFIRMED";
 
-  private static final String ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   private static final SecureRandom RNG = new SecureRandom();
 
-  // 고유 코드 예약: 충돌 시 재시도하여 (code, token) 반환.
-  // token 은 예약/확정/해제 시 검증용으로만 사용.
+  /**
+   * [1] 고유한 6자리 코드를 생성하고 Redis에 '예약 상태'로 저장한다.
+   * - 이미 존재하는 코드면 재시도(MAX_RETRY번)
+   * - 성공 시 (code, token) 쌍을 반환
+   */
   public CodeReservation reserveUniqueCode(String roomId) {
     long ttlSec = props.getRoom().getTtlSeconds();
     for (int i = 0; i < MAX_RETRY; i++) {
@@ -49,14 +51,19 @@ public class CodeService {
       if (Boolean.TRUE.equals(ok)) {
         // roomId -> code 역매핑도 TTL 걸어둠 (선택)
         srt.opsForValue().set(roomCodeKey(roomId), code, Duration.ofSeconds(ttlSec));
-        log.debug("code reserved code={} roomId={} ttl={}s", code, roomId, ttlSec);
+        log.debug("코드 예약 완료: code={} / roomId={} / TTL={}초", code, roomId, ttlSec);
         return new CodeReservation(code, token);
       }
     }
+    log.error("코드 예약 실패: 충돌이 너무 많음");
     throw new CustomException(GlobalErrorCode.INTERNAL_SERVER_ERROR);
   }
 
-  // 예약된 코드를 확정 상태로 전환하고 TTL을 연장/갱신한다.
+  /**
+   * [2] 예약된 코드를 '확정 상태'로 변경한다.
+   * - 예약된 코드와 token이 일치해야 함
+   * - TTL(유효 시간)을 갱신하여 방이 유지됨
+   */
   public void confirmMapping(CodeReservation reservation, String roomId) {
     Objects.requireNonNull(reservation, "reservation 값은 null일 수 없습니다.");
     String code    = reservation.code();
@@ -66,13 +73,13 @@ public class CodeService {
 
     String cur = srt.opsForValue().get(codeKey);
     if (cur == null) {
-      log.warn("confirm failed: code not found (expired?) code={} roomId={}", code, roomId);
+      log.warn("코드 확정 실패: 존재하지 않거나 만료됨 (code={}, roomId={})", code, roomId);
       throw new CustomException(GlobalErrorCode.RESOURCE_NOT_FOUND);
     }
 
     ReservedState rs = decodeReservedValue(cur);
     if (rs == null || !RESERVED.equals(rs.state) || !roomId.equals(rs.roomId) || !token.equals(rs.token)) {
-      log.warn("confirm failed: invalid state/token code={} roomId={} cur={}", code, roomId, cur);
+      log.warn("코드 확정 실패: 상태 또는 토큰 불일치 (code={}, roomId={}, cur={})", code, roomId, cur);
       throw new CustomException(GlobalErrorCode.UNAUTHORIZED);
     }
 
@@ -80,10 +87,13 @@ public class CodeService {
     String confirmedVal = encodeConfirmedValue(roomId);
     srt.opsForValue().set(codeKey, confirmedVal, Duration.ofSeconds(ttlSec));
     srt.opsForValue().set(roomCodeKey(roomId), code, Duration.ofSeconds(ttlSec));
-    log.info("code confirmed code={} roomId={} ttl={}s", code, roomId, ttlSec);
+    log.info("코드 확정 완료: code={} / roomId={} / TTL={}초", code, roomId, ttlSec);
   }
 
-  // 예약 해제
+  /**
+   * [3] 예약된 코드를 해제한다.
+   * - 아직 확정되지 않았고 token이 일치할 때만 삭제
+   */
   public void release(CodeReservation reservation) {
     if (reservation == null) return;
     String code    = reservation.code();
@@ -94,11 +104,11 @@ public class CodeService {
     ReservedState rs = decodeReservedValue(cur);
     if (rs != null && RESERVED.equals(rs.state) && token.equals(rs.token)) {
       srt.delete(codeKey);
-      log.info("code released code={} roomId={}", code, rs.roomId);
+      log.info("🗑코드 해제 완료: code={} / roomId={}", code, rs.roomId);
     }
   }
 
-  // 발표 종료 시, 코드 TTL 을 짧게(1시간) 줄여 빠른 만료 유도
+   // [4] 발표 종료 후 코드 TTL을 1시간으로 단축 (빠른 만료 유도)
   public void shortenTtlAfterEnd(String roomId) {
     String code = getCodeByRoom(roomId);
     if (code == null) return;
@@ -108,29 +118,54 @@ public class CodeService {
     srt.getRequiredConnectionFactory().getConnection().keyCommands().expire(key, grace);
   }
 
-  // roomId -> code 조회(없으면 null)
+   // [5] roomId로 코드 조회 (없으면 null 반환)
   public String getCodeByRoom(String roomId) {
     return srt.opsForValue().get(roomCodeKey(roomId));
   }
 
-  // ====== 내부 구현 ======
+  /**
+   * [6] 코드로 roomId를 역으로 조회
+   * - 없으면 RESOURCE_NOT_FOUND
+   * - RESERVED 상태면 UNAUTHORIZED (아직 사용 불가)
+   */
+  public String resolveRoomIdByCodeOrThrow(String code) {
+    String val = srt.opsForValue().get(codeKey(code));
+    if (val == null) {
+      log.warn("코드 조회 실패: 존재하지 않음 또는 만료됨 code={}", code);
+      throw new CustomException(GlobalErrorCode.RESOURCE_NOT_FOUND); // 코드 만료/없음
+    }
+    if (val.startsWith(CONFIRMED + ":")) {
+      return val.substring((CONFIRMED + ":").length());
+    }
+    if (val.startsWith(RESERVED + ":")) {
+      log.warn("코드 조회 거부: 아직 확정되지 않음 code={}", code);
+      throw new CustomException(GlobalErrorCode.UNAUTHORIZED);
+    }
+    log.error("코드 상태 알 수 없음 code={} value={}", code, val);
+    throw new CustomException(GlobalErrorCode.UNAUTHORIZED);
+  }
 
+  // Redis key 포맷: code:<6자리 코드>
   private String codeKey(String code) {
     return "code:" + code;
   }
 
+  //  Redis key 포맷: room:<roomId>:code
   private String roomCodeKey(String roomId) {
     return "room:" + roomId + ":code";
   }
 
+  // 예약 상태 값 인코딩 (RESERVED:<roomId>:<token>)
   private String encodeReservedValue(String roomId, String token) {
     return RESERVED + ":" + roomId + ":" + token;
   }
 
+  // 확정 상태 값 인코딩 (CONFIRMED:<roomId>)
   private String encodeConfirmedValue(String roomId) {
     return CONFIRMED + ":" + roomId;
   }
 
+  // Redis에 저장된 문자열을 ReservedState 객체로 디코딩
   private ReservedState decodeReservedValue(String cur) {
     // RESERVED:<roomId>:<token>
     if (cur == null || !cur.startsWith(RESERVED + ":")) return null;
@@ -141,14 +176,15 @@ public class CodeService {
 
   // SecureRandom 기반 코드 생성
   private String generateCode() {
-    StringBuilder sb = new StringBuilder(CODE_LENGTH);
-    for (int i = 0; i < CODE_LENGTH; i++) {
-      int idx = RNG.nextInt(ALPHABET.length());
-      sb.append(ALPHABET.charAt(idx));
-    }
-    return sb.toString();
+    int min = (int) Math.pow(10, CODE_LENGTH - 1); // 100000
+    int max = (int) Math.pow(10, CODE_LENGTH) - 1; // 999999
+    int number = RNG.nextInt((max - min) + 1) + min;
+    return String.valueOf(number);
   }
 
+  // 예약 상태를 표현하는 내부 record 클래스
   private record ReservedState(String state, String roomId, String token) {}
+
+  // (코드, 토큰) 쌍을 반환하기 위한 record 클래스
   public record CodeReservation(String code, String token) {}
 }
