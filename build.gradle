@@ -54,6 +54,9 @@ dependencies {
     implementation 'com.google.zxing:core:3.5.3'
     implementation 'com.google.zxing:javase:3.5.3'
 
+    // 스웨거 추가 종속성
+    implementation 'org.apache.commons:commons-lang3:3.13.0'
+
 }
 
 tasks.named('test') {

@@ -21,7 +21,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     registry.addEndpoint("/ws/audience")
         .setAllowedOriginPatterns(
             "http://localhost:*",
-            "https://line4thon-boini.netlify.app"
+            "https://line4thon-boini.netlify.app",
+            "*"
         )
         .withSockJS();
 
@@ -29,8 +30,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     registry.addEndpoint("/ws/presenter")
         .setAllowedOriginPatterns(
             "http://localhost:*",
-            "https://line4thon-boini.netlify.app"
+            "https://line4thon-boini.netlify.app",
+            "*"
         )
+        .withSockJS();
+
+    // 관리자
+    registry.addEndpoint("/ws")
+        .setAllowedOriginPatterns("*")
         .withSockJS();
   }
 
