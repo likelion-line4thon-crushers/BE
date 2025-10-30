@@ -9,6 +9,8 @@ import line4thon.boini.presenter.room.exception.RoomErrorCode;
 import line4thon.boini.presenter.room.service.CodeService.CodeReservation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -20,6 +22,9 @@ public class RoomService {
   private final QrService qrService;                     // QR 생성 담당
   private final PresenterAuthService presenterAuth;      //  발표자 토큰/키 발급
   private final AppProperties props;                     // URL/WS/TTL 등 설정 접근
+
+  @Autowired
+  private RedisTemplate<String, String> redisTemplate;  //Redis
 
   // 발표자가 새로운 방을 생성할 때 호출
   public CreateRoomResponse createRoom(CreateRoomRequest request) {
@@ -44,6 +49,8 @@ public class RoomService {
       log.error("코드 예약 실패: roomId={}, err={}", roomId, e.toString());
       throw new CustomException(RoomErrorCode.CODE_RESERVE_FAILED);
     }
+
+    redisTemplate.opsForSet().size("room:" + roomId + ":audience:online");  //방 redis KEY 생성
 
     final String joinUrl = joinBase + reserved.code();
     String qrB64;

@@ -9,12 +9,16 @@ import line4thon.boini.presenter.room.dto.response.TokenResponse;
 import line4thon.boini.presenter.room.service.CodeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import line4thon.boini.presenter.room.dto.request.CreateRoomRequest;
 import line4thon.boini.presenter.room.dto.request.RefreshPresenterTokenRequest;
 import line4thon.boini.presenter.room.service.PresenterAuthService;
 import line4thon.boini.presenter.room.service.RoomService;
+
+import java.util.Map;
 
 @Slf4j
 @RestController
@@ -26,6 +30,9 @@ public class RoomController {
   private final PresenterAuthService presenterAuth;
   private final CodeService codeService;
   private final AudienceAuthService audienceAuth;
+
+  @Autowired
+  private RedisTemplate<String, String> redisTemplate;
 
   // 발표자: 방 생성
   @PostMapping
@@ -48,6 +55,10 @@ public class RoomController {
     // code -> roomId 확인 (CONFIRMED만 허용)
     String roomId = codeService.resolveRoomIdByCodeOrThrow(code);
     var issued = audienceAuth.issueAudienceToken(roomId);
+
+    //Redis에 유저ID 추가
+    String key = "room:" + roomId + ":audience:online";
+    redisTemplate.opsForSet().add(key, issued.audienceId());
 
     return BaseResponse.success(new JoinResponse(
         roomId,
