@@ -92,8 +92,9 @@ public class RoomService {
             roomId,
             reserved.code(),
             joinUrl,
-            props.getUrls().getWs(),
+            wsUrl,
             request.getCount(),
+            request.getTotalPages(),
             qrB64,
             presenterToken,
             presenterKey
@@ -101,11 +102,11 @@ public class RoomService {
 
       } catch (CustomException ex) {
         // 단계별 표준화된 예외는 예약 해제 후 그대로 전파
-        safeRelease(reserved, roomId, ex);
+        safeRelease(reserved, roomId, ex, confirmed);
         throw ex;
       } catch (RuntimeException ex) {
         // 예상치 못한 런타임 예외도 예약 해제 후 표준화
-        safeRelease(reserved, roomId, ex);
+        safeRelease(reserved, roomId, ex, confirmed);
         throw new CustomException(RoomErrorCode.UNEXPECTED);
       }
     }
@@ -120,14 +121,27 @@ public class RoomService {
     if (count == null || count < 1) {
       throw new CustomException(RoomErrorCode.INVALID_REQUEST);
     }
+
+    Integer totalPages = request.getTotalPages();
+    if (totalPages == null || totalPages < 1 /* || totalPages > 5000 */) {
+      throw new CustomException(RoomErrorCode.INVALID_REQUEST);
+    }
   }
 
   // 확정 실패 또는 중간 오류 시 안전 해제
-  private void safeRelease(CodeReservation reserved, String roomId, Exception cause) {
+  private void safeRelease(CodeReservation reserved, String roomId, Exception cause, boolean confirmed) {
     if (reserved == null) return;
+
+    if (confirmed) {
+      log.error("확정 이후 예외 발생(수동 점검 필요): roomId={}, code={}, cause={}",
+          roomId, reserved.code(), cause.toString());
+      // 필요 시 여기서 롤백 로직이 있다면 호출 (예: codeService.rollbackConfirmed(reserved))
+      return;
+    }
+
     try {
       codeService.release(reserved);
-      log.warn("예약 해제 완료: roomId={}, code={}", roomId, reserved.code(), cause);
+      log.warn("예약 해제 완료: roomId={}, code={}, cause={}", roomId, reserved.code(), cause.toString());
     } catch (RuntimeException re) {
       log.error("예약 해제 실패: roomId={}, code={}, err={}", roomId, reserved.code(), re.toString());
     }
