@@ -17,8 +17,7 @@ public class StreamDebugController {
 
   @GetMapping("/{roomId}")
   public BaseResponse<List<MapRecord<String, Object, Object>>> tail(
-      @PathVariable String roomId,
-      @RequestParam(defaultValue = "30") int count
+      @PathVariable String roomId
   ) {
     String streamKey = "stream:question:events:" + roomId;
 
@@ -26,9 +25,6 @@ public class StreamDebugController {
     Range<String> range = Range.closed("0-0", "+");
     var list = redis.opsForStream().range(streamKey, range);
 
-    if (list != null && list.size() > count) {
-      list = list.subList(Math.max(0, list.size() - count), list.size()); // 최근 N개만
-    }
     return BaseResponse.success("스트림 조회 성공", list);
   }
 }
