@@ -147,7 +147,7 @@ public class QuestionService {
         Long n = redis.opsForValue().increment(key);
         if (n != null && n == 1L) redis.expire(key, java.time.Duration.ofSeconds(5));
         if (n != null && n > 10) {
-          log.warn("[RATE LIMIT] Too many requests (roomId={}, audienceId={}, count={})",
+          log.warn("[RATE LIMIT] 요청이 너무 많습니다 (roomId={}, audienceId={}, count={})",
               roomId, audienceId, n);
             throw new RuntimeException("Too many requests");
         }
