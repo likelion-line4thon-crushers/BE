@@ -11,4 +11,7 @@ import lombok.*;
 public class CreateRoomRequest {
   @NotNull
   private Integer count;
+
+  @NotNull
+  private Integer totalPages;
 }
