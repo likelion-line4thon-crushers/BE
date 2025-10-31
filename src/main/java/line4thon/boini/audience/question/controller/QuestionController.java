@@ -1,5 +1,7 @@
 package line4thon.boini.audience.question.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import line4thon.boini.audience.question.dto.requeset.CreateQuestionRequest;
 import line4thon.boini.audience.question.dto.response.CreateQuestionResponse;
@@ -16,6 +18,7 @@ import java.util.List;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/questions")
+@Tag(name = "청중 질문", description = "청중 실시간 질문 관련 API")
 public class QuestionController {
 
   private final QuestionService questionService;
@@ -26,6 +29,7 @@ public class QuestionController {
    * 구독: /topic/p/{roomId}/public , /topic/p/{roomId}/presenter
    */
   @MessageMapping("/p/{roomId}/question.create")
+  @Operation(summary = "질문 생성 (WebSocket)", description = "STOMP를 통해 실시간 질문을 생성합니다.")
   public void createViaWs(@DestinationVariable String roomId,
       @Valid @Payload CreateQuestionRequest request) {
     // 저장 + 실시간 브로드캐스트는 Service 가 처리
@@ -33,6 +37,10 @@ public class QuestionController {
   }
 
   @GetMapping("/rooms/{roomId}")
+  @Operation(
+      summary = "방의 질문 목록 조회",
+      description = "특정 방(roomId)의 질문 목록을 조회합니다. `fromTs`(이후 타임스탬프)와 `slide`(슬라이드 번호)로 필터링할 수 있습니다."
+  )
   public BaseResponse<List<CreateQuestionResponse>> listRoom(
       @PathVariable String roomId,
       @RequestParam(required = false) Long fromTs,
