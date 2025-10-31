@@ -32,16 +32,13 @@ public class QuestionController {
     questionService.create(roomId, request);
   }
 
-  /**
-   * REST - 슬라이드별 질문 조회 (초기 로딩/무한스크롤)
-   * GET /api/rooms/{roomId}/slides/{slide}/questions?limit=50&fromTs=...
-   */
-  @GetMapping("/rooms/{roomId}/slides/{slide}/questions")
-  public BaseResponse<List<CreateQuestionResponse>> list(@PathVariable String roomId,
-      @PathVariable int slide,
-      @RequestParam(defaultValue = "50") int limit,
-      @RequestParam(required = false) Long fromTs) {
-    var list = questionService.list(roomId, slide, limit, fromTs);
+  @GetMapping("/rooms/{roomId}")
+  public BaseResponse<List<CreateQuestionResponse>> listRoom(
+      @PathVariable String roomId,
+      @RequestParam(required = false) Long fromTs,
+      @RequestParam(required = false) Integer slide // ← 선택 필터
+  ) {
+    var list = questionService.listRoom(roomId, fromTs, slide);
     return BaseResponse.success("질문 목록을 성공적으로 조회했습니다.", list);
   }
 }
