@@ -33,6 +33,7 @@ public class QuestionService {
 
     String hKey = "room:%s:question:%s".formatted(roomId, id);
     String zKey = "room:%s:page:%d:questions".formatted(roomId, request.slide());
+    String zRoom = "room:%s:questions".formatted(roomId);
 
     Map<String, String> h = new LinkedHashMap<>();
     h.put("id", id);
@@ -67,54 +68,73 @@ public class QuestionService {
     // 방 단위 스트림 권장: room별로 분리
     String streamKey = "stream:question:events:" + roomId;
 
-    // XADD → 이후 TRIM 으로 최근 N건만 유지 (XAddOptions 없이 동작)  // [CHANGED]
+    // XADD → 이후 TRIM 으로 최근 N건만 유지 (XAddOptions 없이 동작)
     redis.opsForStream().add(StreamRecords.mapBacked(streamBody).withStreamKey(streamKey));
     redis.opsForStream().trim(streamKey, STREAM_MAXLEN, true);
+    redis.opsForZSet().add(zRoom, id, ts);
 
     log.debug("[STREAM] 질문 이벤트 스트림 추가 (streamKey={}, type=question-created, ts={})", streamKey, ts);
 
     return response;
   }
 
-  // 초기 로딩/무한스크롤용: 슬라이드별 시간 오름차순 일부
-  public List<CreateQuestionResponse> list(String roomId, int slide, int limit, Long fromTs) {
-    String zKey = "room:%s:page:%d:questions".formatted(roomId, slide);
-    double min = (fromTs == null) ? Double.NEGATIVE_INFINITY : fromTs.doubleValue();
-    double max = Double.POSITIVE_INFINITY;
+  // 전체 질문 조회용: 방 단위 시간 오름차순 전체 반환
+  public List<CreateQuestionResponse> listRoom(String roomId, Long fromTs, Integer slide) {
+    // room-wide ZSET: 질문 생성시 함께 적재되어 있어야 함 (member = questionId, score = ts)
+    final String zRoom = "room:%s:questions".formatted(roomId);
 
-    Set<ZSetOperations.TypedTuple<String>> ids =
-        redis.opsForZSet().rangeByScoreWithScores(zKey, min, max, 0, limit);
+    // fromTs 중복 방지: 배타 하한(> fromTs)로 처리
+    // Double 점수 특성상 Math.nextUp 사용 (fromTs가 있을 때만)
+    final double min = (fromTs == null) ? Double.NEGATIVE_INFINITY : Math.nextUp(fromTs.doubleValue());
+    final double max = Double.POSITIVE_INFINITY;
 
-    if (ids == null || ids.isEmpty()) {
+    // slide 필터가 없으면 room-wide 인덱스로, 있으면 슬라이드 인덱스로 바로 당겨오는 게 효율적
+    final String zKey = (slide == null)
+        ? zRoom
+        : "room:%s:page:%d:questions".formatted(roomId, slide);
+
+    // limit 제거: 전체 범위 조회
+    Set<ZSetOperations.TypedTuple<String>> tuples =
+        redis.opsForZSet().rangeByScoreWithScores(zKey, min, max);
+
+    if (tuples == null || tuples.isEmpty()) {
       log.debug("[REDIS] 질문 없음 (roomId={}, slide={})", roomId, slide);
-    return List.of();
-  }
-
-    var result = ids.stream()
-        .filter(tt -> tt.getValue() != null && tt.getScore() != null)
-        .map(tt -> toResponse(roomId, tt.getValue()))
-        .filter(Objects::nonNull)
-        .toList();
-
-    log.info("[QUERY] 질문 조회 완료 (roomId={}, slide={}, count={})", roomId, slide, result.size());
-    return result;
-  }
-
-  private CreateQuestionResponse toResponse(String roomId, String id) {
-    Map<Object, Object> h = redis.opsForHash().entries("room:%s:question:%s".formatted(roomId, id));
-    if (h.isEmpty()) {
-      log.warn("[REDIS] 질문 상세 없음 (roomId={}, questionId={})", roomId, id);
-      return null;
+      return List.of();
     }
 
-    return new CreateQuestionResponse(
-        String.valueOf(h.get("id")),
-        String.valueOf(h.get("roomId")),
-        Integer.parseInt(String.valueOf(h.get("slide"))),
-        String.valueOf(h.get("audienceId")),
-        String.valueOf(h.get("content")),
-        Long.parseLong(String.valueOf(h.get("ts")))
-    );
+    // HASH에서 본문 조립
+    List<CreateQuestionResponse> result = new ArrayList<>(tuples.size());
+    for (ZSetOperations.TypedTuple<String> t : tuples) {
+      String qid = t.getValue();
+      if (qid == null) continue;
+
+      String hKey = "room:%s:question:%s".formatted(roomId, qid);
+      Map<Object, Object> h = redis.opsForHash().entries(hKey);
+      if (h == null || h.isEmpty()) continue;
+
+      int s = Integer.parseInt((String) h.get("slide"));
+
+      // slide 필터가 있는 경우, room-wide에서 가져왔을 때 추가 필터링
+      if (slide != null && !zKey.endsWith(":questions")) {
+        // 이미 슬라이드 인덱스를 썼으므로 추가 필터 불필요
+      } else if (slide != null && s != slide) {
+        continue;
+      }
+
+      long ts = Long.parseLong((String) h.get("ts"));
+      result.add(new CreateQuestionResponse(
+          (String) h.get("id"),
+          (String) h.get("roomId"),
+          s,
+          (String) h.get("audienceId"),
+          (String) h.get("content"),
+          ts
+      ));
+    }
+
+    // 오름차순(시간↑) 정렬 보장
+    result.sort(Comparator.comparingLong(CreateQuestionResponse::ts));
+    return result;
   }
 
   private String genId() {
