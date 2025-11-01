@@ -42,7 +42,7 @@ public class StickerService {
 //            ObjectMapper mapper = new ObjectMapper();
 
             // 저장할 필드 구성
-            Map<String, String> fields = new HashMap<>();
+            Map<String, Object> fields = new HashMap<>();
             fields.put("emoji", String.valueOf(msg.getEmoji()));
             fields.put("audienceId", msg.getAudienceID());
             fields.put("createdAt", String.valueOf(msg.getCreated_at()));
