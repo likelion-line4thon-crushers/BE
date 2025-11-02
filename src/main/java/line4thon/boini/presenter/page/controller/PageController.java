@@ -3,7 +3,9 @@ package line4thon.boini.presenter.page.controller;
 import line4thon.boini.audience.room.dto.response.JoinResponse;
 import line4thon.boini.global.common.exception.CustomException;
 import line4thon.boini.global.common.response.BaseResponse;
+import line4thon.boini.presenter.page.dto.request.ChangeAudiencePageRequest;
 import line4thon.boini.presenter.page.dto.request.ChangePageRequest;
+import line4thon.boini.presenter.page.dto.response.ChangeAudiencePageResponse;
 import line4thon.boini.presenter.page.dto.response.ChangePageResponse;
 import line4thon.boini.presenter.page.exception.PageErrorCode;
 import line4thon.boini.presenter.page.service.PageService;
@@ -51,12 +53,13 @@ public class PageController {
     }
 
     @MessageMapping("/presentation/{sessionId}/pageChange/audience")
-    public BaseResponse handlePageChangeAudience(@DestinationVariable String sessionId, ChangePageRequest msg) {
+    public BaseResponse handlePageChangeAudience(@DestinationVariable String sessionId, ChangeAudiencePageRequest msg) {
 
         // Redis 관리
         pageService.updateAudiencePage(sessionId, msg);
 
-        return BaseResponse.success("페이지가 성공적으로 변경되었습니다.", new ChangePageResponse(
+        return BaseResponse.success("페이지가 성공적으로 변경되었습니다.", new ChangeAudiencePageResponse(
+                msg.getAudienceId(),
                 msg.getBeforePage(),
                 msg.getChangedPage(),
                 LocalDateTime.now()

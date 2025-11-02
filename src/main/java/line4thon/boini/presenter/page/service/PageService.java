@@ -2,6 +2,7 @@ package line4thon.boini.presenter.page.service;
 
 import line4thon.boini.global.common.exception.CustomException;
 import line4thon.boini.global.common.response.BaseResponse;
+import line4thon.boini.presenter.page.dto.request.ChangeAudiencePageRequest;
 import line4thon.boini.presenter.page.dto.request.ChangePageRequest;
 import line4thon.boini.presenter.page.dto.response.ChangePageResponse;
 import line4thon.boini.presenter.page.exception.PageErrorCode;
@@ -49,7 +50,7 @@ public class PageService {
         }
     }
 
-    public void updateAudiencePage(String sessionId, ChangePageRequest msg) {
+    public void updateAudiencePage(String sessionId, ChangeAudiencePageRequest msg) {
         try{
             // Redis Stream 저장
 //            Map<String, String> event = Map.of(
@@ -61,11 +62,13 @@ public class PageService {
 //            redisTemplate.opsForStream().add("page_events", event);
             //사용자 Redis 현재 위치 수정
             //각 페이지 별로 Key에서 집합 수정
-            log.info("페이지 전환 완료: roomId={}, beforePage={}, changedPage={}", sessionId, msg.getBeforePage(), msg.getChangedPage());
+            log.info("페이지 전환 완료: roomId={}, audienceId={}, beforePage={}, changedPage={}", sessionId, msg.getAudienceId(), msg.getBeforePage(), msg.getChangedPage());
 
-//            System.out.println("페이지 전환 완료: roomId=" + sessionId +
-//                    ", beforePage=" + msg.getBeforePage() +
-//                    ", changedPage=" + msg.getChangedPage());
+            String key1 =  "room:" + sessionId + ":slide:" + msg.getBeforePage();
+            String key2 =  "room:" + sessionId + ":slide:" + msg.getChangedPage();
+
+            redisTemplate.opsForSet().remove(key1, msg.getAudienceId());
+            redisTemplate.opsForSet().add(key2, msg.getAudienceId());
 
         } catch (Exception e){
             log.error("페이지 전환 실패: roomId={}, err={}", sessionId, e.toString());

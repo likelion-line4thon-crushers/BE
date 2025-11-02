@@ -95,6 +95,14 @@ public class RoomService {
           throw new CustomException(RoomErrorCode.CODE_CONFIRM_FAILED);
         }
 
+        //Redis에 페이지 별로 set 추가
+        int totalPages = request.getTotalPages(); // 이미 int라면 int totalPages = ...
+        for (int i = 1; i <= totalPages; i++) {
+          // i는 0부터 totalPages-1까지
+          String key = "room:" + roomId + ":slide:" + i;
+          redisTemplate.opsForSet().add(key, "_init_");
+        }
+
         return new CreateRoomResponse(
             roomId,
             reserved.code(),
