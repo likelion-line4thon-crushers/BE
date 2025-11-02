@@ -81,6 +81,10 @@ public class RoomController {
     String key = "room:" + roomId + ":audience:online";
     redisTemplate.opsForSet().add(key, issued.audienceId());
 
+    //Redis에 유저 슬라이드1에 추가
+    String key2 = "room:" + roomId + ":slide:1";
+    redisTemplate.opsForSet().add(key2, issued.audienceId());
+
     return BaseResponse.success(new JoinResponse(
         roomId,
         code,
