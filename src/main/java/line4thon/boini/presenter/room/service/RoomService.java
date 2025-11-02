@@ -39,6 +39,7 @@ public class RoomService {
       throw new CustomException(RoomErrorCode.INVALID_WS_URL);
 
     String roomId = UUID.randomUUID().toString();
+    String deckId = UUID.randomUUID().toString(); // 슬라이드 묶음 식별자
 
     // 코드 예약 (충돌 시 내부 재시도)
     final CodeReservation reserved;
@@ -112,7 +113,8 @@ public class RoomService {
             request.getTotalPages(),
             qrB64,
             presenterToken,
-            presenterKey
+            presenterKey,
+            deckId
         );
 
       } catch (CustomException ex) {
