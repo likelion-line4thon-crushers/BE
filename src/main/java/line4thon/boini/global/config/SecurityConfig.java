@@ -25,7 +25,7 @@ public class SecurityConfig {
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(auth -> auth
             .requestMatchers(SWAGGER_WHITELIST).permitAll()
-            .requestMatchers("/auth/**", "/health", "/actuator/**", "/ws/**", "/topic/**", "/app/**").permitAll()
+            .requestMatchers("/auth/**", "/favicon.ico", "/health", "/actuator/**", "/ws/**", "/topic/**", "/app/**").permitAll()
             .anyRequest().permitAll()
         )
         .httpBasic(b -> b.disable())
