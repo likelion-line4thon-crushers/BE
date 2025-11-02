@@ -20,7 +20,7 @@ jobs:
         run: |
           chmod 544 ./gradlew
           # bootJar mainClass 명시 (Gradle 8 + Spring Boot 3 안전한 방법)
-          echo "tasks.named('bootJar') { mainClass.set('org.example.flow.FlowApplication') }" >> build.gradle
+          echo "tasks.named('bootJar') { mainClass.set('line4thon.boini.BoiniApplication') }" >> build.gradle
           ./gradlew clean build -x test --info
           
 
