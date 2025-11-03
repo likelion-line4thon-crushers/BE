@@ -94,7 +94,7 @@ public class DeckAssetService {
         }
 
         // (2) 썸네일 생성 후 업로드
-        try { // [수정] 썸네일 생성 실패 매핑
+        try {
           Thumbnails.of(inForThumb)
               .size(320, 320)
               .outputFormat("webp")
@@ -105,7 +105,7 @@ public class DeckAssetService {
           throw new CustomException(ImageAssetErrorCode.THUMBNAIL_GENERATION_FAILED);
         }
 
-        try { // [수정] 썸네일 업로드 실패 매핑
+        try {
           s3.putObject(
               PutObjectRequest.builder()
                   .bucket(bucket)
@@ -125,13 +125,11 @@ public class DeckAssetService {
         thumbs.add(new ThumbnailDto(page, thumbUrlAbs));
 
         if (page == 1) {
-          // [수정] 첫 페이지 원본은 presigned 강제
           firstPageOriginalUrl = buildPublicOrPresignedUrl(origKey, true);
         }
 
         page++;
       } catch (IOException e) {
-        // [수정] 업로드 과정의 일반 IO 예외 → 도메인 에러로 매핑
         log.error("[오류] 페이지 업로드 중 IO 예외: page={}, 이유={}", page, e.getMessage(), e);
         throw new CustomException(ImageAssetErrorCode.UNKNOWN_ERROR);
       }
