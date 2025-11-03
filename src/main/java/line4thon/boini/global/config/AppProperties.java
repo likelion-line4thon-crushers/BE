@@ -13,6 +13,7 @@ public class AppProperties {
   private Room room = new Room();
   private Jwt jwt = new Jwt();
   private final Urls urls = new Urls();
+  private final S3 s3 = new S3();
 
   @Getter @Setter
   public static class Room {
@@ -30,5 +31,14 @@ public class AppProperties {
     private String joinBase = "http://localhost:5173/j/"; // default 값
     // WebSocket 엔드포인트
     private String ws = "ws://localhost:8080/ws"; // default 값
+  }
+
+  @Getter @Setter
+  public static class S3 {
+    private String bucket;
+    private String region;
+    private String cloudfrontDomain;
+    private long presignSeconds = 3600;
+    private String rootPrefix = "presentations";
   }
 }
