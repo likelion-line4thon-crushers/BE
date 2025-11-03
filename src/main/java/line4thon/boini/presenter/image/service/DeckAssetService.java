@@ -34,12 +34,22 @@ public class DeckAssetService {
   private final S3Presigner presigner;
   private final AppProperties props;
 
-  // public API: 컨트롤러에서 이 메서드만 사용
+  /**
+   * 컨트롤러가 호출하는 공개 API.
+   * - 특정 페이지의 원본 이미지 접근 URL을 반환.
+   * - 내부 구현(getOriginalInternal)로 위임해서 presigned URL을 발급한다.
+   */
   public OriginalUrlResponse getOriginalUrl(String roomId, String deckId, int page, String extHint) {
     return getOriginalInternal(roomId, deckId, page, extHint); // 내부 위임
   }
 
-  /** PDF→이미지 업로드(원본+썸네일) */
+  /**
+   * PDF → 이미지로 분할된 파일들(프론트에서 생성) 업로드.
+   * - 원본 이미지를 S3 에 /pages/ 경로로 업로드
+   * - 동시에 썸네일(webp)을 만들고 /thumbs/ 경로로 업로드
+   * - 썸네일은 CloudFront 공개 URL(있으면) 또는 presigned URL 로 반환
+   * - 첫 페이지 원본은 무조건 presigned URL 로 반환 (다운스트림에서 바로 표시하려는 용도)
+   * */
   public UploadPagesResponse uploadPages(String roomId, String deckId, List<MultipartFile> files) {
     String bucket = props.getS3().getBucket();
     String root   = normalizePrefix(props.getS3().getRootPrefix()); // [수정] 정규화 적용
@@ -65,7 +75,7 @@ public class DeckAssetService {
                 .build(),
             RequestBody.fromInputStream(f.getInputStream(), f.getSize())
         );
-        log.info("[S3] original uploaded: s3://{}/{}", bucket, origKey);
+        log.info("[S3] 원본 업로드 완료 → s3://{}/{}", bucket, origKey);
 
         // (2) 썸네일 생성 후 업로드
         Thumbnails.of(inForThumb).size(320, 320).outputFormat("webp").outputQuality(0.8f)
@@ -79,7 +89,7 @@ public class DeckAssetService {
                 .build(),
             RequestBody.fromBytes(thumbOut.toByteArray())
         );
-        log.info("[S3] thumb uploaded: s3://{}/{}", bucket, thumbKey);
+        log.info("[S3] 썸네일 업로드 완료 → s3://{}/{}", bucket, thumbKey);
 
         // (3) 응답용 절대 URL
         String thumbUrlAbs = buildPublicOrPresignedUrl(thumbKey, false);
@@ -96,14 +106,18 @@ public class DeckAssetService {
     }
 
     if (!thumbs.isEmpty()) {
-      log.info("[RESP] first thumb: {}", thumbs.get(0).getThumbnailUrl());
-      log.info("[RESP] first original: {}", firstPageOriginalUrl);
+      log.info("[응답] 첫 번째 썸네일 URL: {}", thumbs.get(0).getThumbnailUrl());
+      log.info("[응답] 첫 번째 원본 URL: {}", firstPageOriginalUrl);
     }
 
     return new UploadPagesResponse(deckId, files.size(), firstPageOriginalUrl, thumbs);
   }
 
-  /** 메타(썸네일) 목록도 절대 URL 보장 */
+  /**
+   * 썸네일(메타) 목록 제공
+   * - 총 페이지 수를 받아 1..N 페이지에 대한 썸네일 절대 URL을 만들어서 반환
+   * - CloudFront 있으면 공개 URL, 없으면 presigned
+   */
   public SlidesMetaResponse getThumbnails(String roomId, String deckId, int totalPages) {
     String root = normalizePrefix(props.getS3().getRootPrefix()); // [수정] 정규화 적용
     List<ThumbnailDto> list = new ArrayList<>(totalPages);
@@ -112,10 +126,15 @@ public class DeckAssetService {
       String absoluteUrl = buildPublicOrPresignedUrl(key, false);
       list.add(new ThumbnailDto(p, absoluteUrl));
     }
+    log.info("[S3] 총 {}개의 썸네일 메타 URL 생성 완료", totalPages);
     return new SlidesMetaResponse(roomId, deckId, totalPages, list);
   }
 
-  /** 특정 페이지 원본 URL (항상 presign) */
+  /**
+   * 특정 페이지의 원본 이미지 URL 발급 (항상 presigned)
+   * - extHint 로 확장자를 힌트로 받되, 화이트리스트 검사
+   * - 키를 만든 뒤 presign 해서 반환
+   */
   private OriginalUrlResponse getOriginalInternal(String roomId, String deckId, int page, String extHint) {
     String ext = (extHint == null || extHint.isBlank()) ? "png" : extHint.toLowerCase();
     if (!List.of("png","jpg","jpeg","webp").contains(ext)) {
@@ -123,11 +142,11 @@ public class DeckAssetService {
     }
 
     String key = buildKey(
-        normalizePrefix(props.getS3().getRootPrefix()), // [수정] 정규화 적용
+        normalizePrefix(props.getS3().getRootPrefix()),
         roomId, deckId, page, false, ext
     );
 
-    String url = buildPresignedUrl(key); // 항상 presigned
+    String url = buildPresignedUrl(key);
     return new OriginalUrlResponse(roomId, deckId, page, url);
   }
 
@@ -154,7 +173,7 @@ public class DeckAssetService {
   private String buildPublicOrPresignedUrl(String key, boolean forcePresign) {
     String cf = props.getS3().getCloudfrontDomain();
     if (!forcePresign && cf != null && !cf.isBlank()) {
-      return "https://%s/%s".formatted(cf.replaceAll("/+$",""), urlEncodePath(key)); // [수정] 인코딩
+      return "https://%s/%s".formatted(cf.replaceAll("/+$",""), urlEncodePath(key));
     }
     return buildPresignedUrl(key);
   }
@@ -185,7 +204,7 @@ public class DeckAssetService {
     if (contentType == null) return "png";
     if (contentType.contains("png")) return "png";
     if (contentType.contains("jpeg") || contentType.contains("jpg")) return "jpg";
-    if (contentType.contains("webp")) return "webp"; // [수정] 웹피도 처리
+    if (contentType.contains("webp")) return "webp";
     return "png";
   }
 }
