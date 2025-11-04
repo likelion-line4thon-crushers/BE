@@ -66,10 +66,11 @@ dependencies {
     // (이미 있음) WebP 리더 등 확장 플러그인 - 읽기 위주지만 같이 둬도 충돌 없음
     implementation 'com.twelvemonkeys.imageio:imageio-webp:3.12.0'
 
-    // 썸네일 생성
-    implementation 'net.coobird:thumbnailator:0.4.20'
-
     implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    implementation 'com.twelvemonkeys.imageio:imageio-core:3.10.1'
+    implementation 'com.twelvemonkeys.imageio:imageio-webp:3.10.1'
+
 }
 
 tasks.named('test') {
