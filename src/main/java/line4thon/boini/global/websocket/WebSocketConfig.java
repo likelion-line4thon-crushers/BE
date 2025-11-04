@@ -22,6 +22,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         .setAllowedOriginPatterns(
             "http://localhost:*",
             "https://line4thon-boini.netlify.app",
+            "https://api.boini.shop",
             "*"
         )
         .withSockJS();
@@ -31,6 +32,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         .setAllowedOriginPatterns(
             "http://localhost:*",
             "https://line4thon-boini.netlify.app",
+            "https://api.boini.shop",
             "*"
         )
         .withSockJS();
