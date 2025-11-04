@@ -12,8 +12,8 @@ import org.springframework.context.annotation.Configuration;
 public class AppProperties {
   private Room room = new Room();
   private Jwt jwt = new Jwt();
-  private final Urls urls = new Urls();
-  private final S3 s3 = new S3();
+  private Urls urls = new Urls();
+  private S3 s3 = new S3();
 
   @Getter @Setter
   public static class Room {
