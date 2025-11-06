@@ -1,8 +1,16 @@
 package line4thon.boini.presenter.room.service;
 
 import java.util.UUID;
+
+import line4thon.boini.audience.room.dto.request.LeaveRoomRequest;
+import line4thon.boini.audience.room.dto.response.JoinResponse;
+import line4thon.boini.audience.room.dto.response.LeaveRoomResponse;
+import line4thon.boini.audience.room.service.AudienceAuthService;
 import line4thon.boini.global.common.exception.CustomException;
+import line4thon.boini.global.common.response.BaseResponse;
 import line4thon.boini.global.config.AppProperties;
+import line4thon.boini.global.jwt.service.JwtService;
+import line4thon.boini.presenter.page.service.PageService;
 import line4thon.boini.presenter.room.dto.request.CreateRoomRequest;
 import line4thon.boini.presenter.room.dto.response.CreateRoomResponse;
 import line4thon.boini.presenter.room.exception.RoomErrorCode;
@@ -12,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.RequestBody;
 
 @Slf4j
 @Service
@@ -22,6 +31,9 @@ public class RoomService {
   private final QrService qrService;                     // QR 생성 담당
   private final PresenterAuthService presenterAuth;      //  발표자 토큰/키 발급
   private final AppProperties props;                     // URL/WS/TTL 등 설정 접근
+  private final PageService pageService;
+  private final AudienceAuthService audienceAuthService;
+
 
   @Autowired
   private RedisTemplate<String, String> redisTemplate;  //Redis
@@ -164,5 +176,31 @@ public class RoomService {
     } catch (RuntimeException re) {
       log.error("예약 해제 실패: roomId={}, code={}, err={}", roomId, reserved.code(), re.toString());
     }
+  }
+
+  //방 퇴장
+  public BaseResponse<LeaveRoomResponse> leaveRoom(String roomId, LeaveRoomRequest request){
+    //slide 개수
+    int slides = pageService.countSlideKeys(roomId);
+
+
+    //online Redis에서 해당 청중 삭제
+    for(int i = 1; i <= slides; i++) {
+      String key2 = "room:" + roomId + ":slide:1";
+
+      if(redisTemplate.opsForSet().isMember(key2, request.getAudienceId())) {
+        redisTemplate.opsForSet().remove(key2, request.getAudienceId());
+      }
+    }
+
+    //online Redis에서 해당 청중 삭제
+    String key = "room:" + roomId + ":audience:online";
+    redisTemplate.opsForSet().remove(key, request.getAudienceId());
+
+    return BaseResponse.success(new LeaveRoomResponse(
+            roomId,
+            request.getAudienceId(),
+            request.getAudienceJWT()
+    ));
   }
 }
