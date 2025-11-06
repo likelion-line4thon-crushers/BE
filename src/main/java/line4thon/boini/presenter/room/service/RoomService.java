@@ -53,6 +53,8 @@ public class RoomService {
 
     redisTemplate.opsForSet().size("room:" + roomId + ":audience:online");  //방 redis KEY 생성
 
+    redisTemplate.opsForValue().set("room:" + roomId + ":presenterPage", "1"); //방 redis KEY 생성
+
     final String joinUrl = joinBase + reserved.code();
     String qrB64;
     String presenterToken;
