@@ -15,7 +15,16 @@ public class FeedbackReportController {
   private final FeedbackReportService feedbackQueryService;
 
   @GetMapping("/{roomId}/feedbacks")
-  @Operation(summary = "방의 모든 후기 조회", description = "특정 roomId에 해당하는 청중 후기 목록과 평균 평점을 반환합니다.")
+  @Operation(
+      summary = "후기 목록 및 통계 조회",
+      description = """
+          특정 roomId에 해당하는 청중 후기 목록을 조회합니다.
+          - 평균 평점(`averageRating`)
+          - 후기 개수(`count`)
+          - 후기 목록(`feedbacks`)
+          - GPT 요약(`summary`)
+          """
+  )
   public BaseResponse<FeedbackReportResponse> getFeedbacks(@PathVariable String roomId) {
     var result = feedbackQueryService.getFeedbacksByRoom(roomId);
     return BaseResponse.success(result);
