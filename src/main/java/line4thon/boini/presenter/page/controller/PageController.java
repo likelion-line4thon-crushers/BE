@@ -1,5 +1,7 @@
 package line4thon.boini.presenter.page.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import line4thon.boini.audience.room.dto.response.JoinResponse;
 import line4thon.boini.global.common.exception.CustomException;
 import line4thon.boini.global.common.response.BaseResponse;
@@ -7,22 +9,28 @@ import line4thon.boini.presenter.page.dto.request.ChangeAudiencePageRequest;
 import line4thon.boini.presenter.page.dto.request.ChangePageRequest;
 import line4thon.boini.presenter.page.dto.response.ChangeAudiencePageResponse;
 import line4thon.boini.presenter.page.dto.response.ChangePageResponse;
+import line4thon.boini.presenter.page.dto.response.SlideAudienceCountResponse;
 import line4thon.boini.presenter.page.exception.PageErrorCode;
 import line4thon.boini.presenter.page.service.PageService;
 import line4thon.boini.presenter.room.exception.PresenterErrorCode;
 import line4thon.boini.presenter.room.service.RoomService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
 
 import java.time.LocalDateTime;
 import java.util.Map;
 
 @Slf4j
 @Controller
+//@RequiredArgsConstructor
 public class PageController {
 
     private final SimpMessagingTemplate messagingTemplate;
@@ -65,6 +73,5 @@ public class PageController {
                 LocalDateTime.now()
         ));
     }
-
 
 }
