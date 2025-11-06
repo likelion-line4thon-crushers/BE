@@ -8,8 +8,9 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class FeedbackListResponse {
+public class FeedbackReportResponse {
   private double averageRating;
   private int count;
   private List<FeedbackItemDto> feedbacks;
+  private String summary;
 }
