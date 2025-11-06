@@ -3,9 +3,12 @@ package line4thon.boini.presenter.room.contorller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import line4thon.boini.audience.room.dto.request.LeaveRoomRequest;
 import line4thon.boini.audience.room.dto.response.JoinResponse;
+import line4thon.boini.audience.room.dto.response.LeaveRoomResponse;
 import line4thon.boini.audience.room.service.AudienceAuthService;
 import line4thon.boini.global.common.response.BaseResponse;
+import line4thon.boini.presenter.page.service.PageService;
 import line4thon.boini.presenter.room.dto.response.CreateRoomResponse;
 import line4thon.boini.presenter.room.dto.response.TokenResponse;
 import line4thon.boini.presenter.room.service.CodeService;
@@ -33,6 +36,7 @@ public class RoomController {
   private final PresenterAuthService presenterAuth;
   private final CodeService codeService;
   private final AudienceAuthService audienceAuth;
+  private final PageService pageService;
 
   @Autowired
   private RedisTemplate<String, String> redisTemplate;
@@ -92,4 +96,17 @@ public class RoomController {
         issued.audienceToken()
     ));
   }
+
+  // 청중: 방 퇴장
+  @PostMapping("/leave/{roomId}")
+  @Operation(
+          summary = "청중 방 퇴장",
+          description = """
+          `roomId`, `audienceId`, `audienceToken`으로 해당 청중을 방에서 퇴장시킵니다.
+          """
+  )
+  public BaseResponse<LeaveRoomResponse> leaveRoom(@PathVariable("roomId") String roomId, @RequestBody LeaveRoomRequest request) {
+    return roomService.leaveRoom(roomId, request);
+  }
+
 }
