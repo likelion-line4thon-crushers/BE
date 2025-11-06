@@ -1,6 +1,8 @@
 package line4thon.boini.audience.feedback.service;
 
 import line4thon.boini.audience.feedback.dto.FeedbackItemDto;
+import line4thon.boini.audience.feedback.exception.FeedbackErrorCode;
+import line4thon.boini.global.common.exception.CustomException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import line4thon.boini.audience.feedback.dto.response.*;
@@ -18,42 +20,55 @@ public class FeedbackReportService {
 
 
   public FeedbackReportResponse getFeedbacksByRoom(String roomId) {
-    List<FeedbackEntity> list = feedbackRepository.findByRoomIdOrderByCreatedAtDesc(roomId);
 
-    if (list.isEmpty()) {
-      return FeedbackReportResponse.builder()
-          .averageRating(0)
-          .count(0)
-          .feedbacks(List.of())
-          .build();
+    if (roomId == null || roomId.isBlank()) {
+      throw new CustomException(FeedbackErrorCode.EMPTY_ROOM_ID);
     }
 
-    double avg = list.stream()
-        .mapToInt(FeedbackEntity::getRating)
-        .average()
-        .orElse(0.0);
+    try {
+      List<FeedbackEntity> list = feedbackRepository.findByRoomIdOrderByCreatedAtDesc(roomId);
 
-    List<String> comments = list.stream()
-        .map(FeedbackEntity::getComment)
-        .filter(c -> c != null && !c.isBlank())
-        .toList();
+      if (list.isEmpty()) {
+        return FeedbackReportResponse.builder()
+            .averageRating(0)
+            .count(0)
+            .summary("청중 후기가 없습니다.")
+            .feedbacks(List.of())
+            .build();
+      }
 
-    String summary = chatGptService.summarizeFeedbackComments(comments, avg, comments.size());
+      double avg = list.stream()
+          .mapToInt(FeedbackEntity::getRating)
+          .average()
+          .orElse(0.0);
 
-    List<FeedbackItemDto> items = list.stream()
-        .map(f -> FeedbackItemDto.builder()
-            .audienceId(f.getAudienceId())
-            .rating(f.getRating())
-            .comment(f.getComment())
-            .createdAt(f.getCreatedAt())
-            .build())
-        .toList();
+      List<String> comments = list.stream()
+          .map(FeedbackEntity::getComment)
+          .filter(c -> c != null && !c.isBlank())
+          .toList();
 
-    return FeedbackReportResponse.builder()
-        .averageRating(Math.round(avg * 10.0) / 10.0)
-        .count(items.size())
-        .summary(summary)
-        .feedbacks(items)
-        .build();
+      String summary = chatGptService.summarizeFeedbackComments(comments, avg, comments.size());
+
+      List<FeedbackItemDto> items = list.stream()
+          .map(f -> FeedbackItemDto.builder()
+              .audienceId(f.getAudienceId())
+              .rating(f.getRating())
+              .comment(f.getComment())
+              .createdAt(f.getCreatedAt())
+              .build())
+          .toList();
+
+      return FeedbackReportResponse.builder()
+          .averageRating(Math.round(avg * 10.0) / 10.0) // 소수 1자리
+          .count(items.size())
+          .summary(summary)
+          .feedbacks(items)
+          .build();
+
+    } catch (CustomException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new CustomException(FeedbackErrorCode.FETCH_FAILED);
+    }
   }
 }
