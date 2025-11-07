@@ -101,12 +101,15 @@ public class RoomController {
     String key3= "room:" + roomId + ":deckId";
     String deckId = redisTemplate.opsForValue().get(key3);
 
+    int totalPages = pageService.countSlideKeys(roomId);
+
     return BaseResponse.success(new JoinResponse(
         roomId,
         code,
         issued.audienceId(),
         issued.audienceToken(),
-        deckId
+        deckId,
+        totalPages
     ));
   }
 
