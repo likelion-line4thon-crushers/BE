@@ -10,4 +10,5 @@ public class JoinResponse {
   private final String code;
   private final String audienceId;
   private final String audienceToken;
+  private final String deckId;
 }

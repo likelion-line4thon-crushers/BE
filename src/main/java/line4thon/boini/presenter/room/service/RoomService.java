@@ -129,6 +129,9 @@ public class RoomService {
           redisTemplate.opsForSet().add(key, "_init_");
         }
 
+        String key2= "room:" + roomId + ":deckId";
+        redisTemplate.opsForValue().set(key2, deckId);
+
         return new CreateRoomResponse(
             roomId,
             reserved.code(),

@@ -98,11 +98,15 @@ public class RoomController {
     String key2 = "room:" + roomId + ":slide:1";
     redisTemplate.opsForSet().add(key2, issued.audienceId());
 
+    String key3= "room:" + roomId + ":deckId";
+    String deckId = redisTemplate.opsForValue().get(key3);
+
     return BaseResponse.success(new JoinResponse(
         roomId,
         code,
         issued.audienceId(),
-        issued.audienceToken()
+        issued.audienceToken(),
+        deckId
     ));
   }
 
