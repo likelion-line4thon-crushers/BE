@@ -11,4 +11,5 @@ public class JoinResponse {
   private final String audienceId;
   private final String audienceToken;
   private final String deckId;
+  private final Integer totalPages;
 }
