@@ -6,6 +6,7 @@ import line4thon.boini.audience.sticker.dto.response.StickerResponse;
 import line4thon.boini.audience.sticker.exception.StickerErrorCode;
 import line4thon.boini.global.common.exception.CustomException;
 import line4thon.boini.presenter.page.exception.PageErrorCode;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -17,20 +18,12 @@ import java.util.Map;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class StickerService {
 
     private final SimpMessagingTemplate messagingTemplate;
     private final RedisTemplate<String, String> redisTemplate;
-
-
-    public StickerService(SimpMessagingTemplate messagingTemplate,
-                          RedisTemplate<String, String> redisTemplate) {
-        this.messagingTemplate = messagingTemplate;
-        this.redisTemplate = redisTemplate;
-    }
-
-
-
+    private final RedisTemplate<String, Object> objectRedisTemplate;
 
     public void sendStickerMessage(String sessionId, StickerRequest msg) {
 
@@ -43,15 +36,15 @@ public class StickerService {
 
             // 저장할 필드 구성
             Map<String, Object> fields = new HashMap<>();
-            fields.put("emoji", String.valueOf(msg.getEmoji()));
+            fields.put("emoji", msg.getEmoji());
             fields.put("audienceId", msg.getAudienceID());
-            fields.put("createdAt", String.valueOf(msg.getCreated_at()));
-            fields.put("x", String.valueOf(msg.getX()));
-            fields.put("y", String.valueOf(msg.getY()));
-            fields.put("slide", String.valueOf(msg.getSlide()));
+            fields.put("createdAt", msg.getCreated_at());
+            fields.put("x", msg.getX());
+            fields.put("y", msg.getY());
+            fields.put("slide", msg.getSlide());
 
             // Redis Stream에 추가 (XADD)
-            redisTemplate.opsForStream().add(key, fields);
+            objectRedisTemplate.opsForStream().add(key, fields);
             // JSON으로 변환 후 저장
 //            String json = mapper.writeValueAsString(fields);
 //            redisTemplate.opsForStream().add(key, Map.of("data", json));

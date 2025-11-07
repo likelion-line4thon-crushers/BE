@@ -28,15 +28,15 @@ public class RedisConfig {
   // 객체 저장용 RedisTemplate
   @Bean
   public RedisTemplate<String, Object> objectRedisTemplate(
-      RedisConnectionFactory connectionFactory,
-      ObjectMapper redisObjectMapper) {
+          RedisConnectionFactory connectionFactory,
+          ObjectMapper redisObjectMapper) {
 
     RedisTemplate<String, Object> template = new RedisTemplate<>();
     template.setConnectionFactory(connectionFactory);
 
     // JSON 직렬화 설정
     GenericJackson2JsonRedisSerializer jsonSerializer =
-        new GenericJackson2JsonRedisSerializer(redisObjectMapper);
+            new GenericJackson2JsonRedisSerializer(redisObjectMapper);
 
     // Key는 String, Value는 JSON으로 직렬화
     template.setKeySerializer(new StringRedisSerializer());

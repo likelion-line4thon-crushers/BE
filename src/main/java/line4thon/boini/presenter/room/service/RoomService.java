@@ -1,12 +1,17 @@
 package line4thon.boini.presenter.room.service;
 
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
+import io.jsonwebtoken.Claims;
 import line4thon.boini.audience.room.dto.request.LeaveRoomRequest;
 import line4thon.boini.audience.room.dto.response.JoinResponse;
 import line4thon.boini.audience.room.dto.response.LeaveRoomResponse;
 import line4thon.boini.audience.room.service.AudienceAuthService;
 import line4thon.boini.global.common.exception.CustomException;
+import line4thon.boini.global.common.exception.GlobalErrorCode;
 import line4thon.boini.global.common.response.BaseResponse;
 import line4thon.boini.global.config.AppProperties;
 import line4thon.boini.global.jwt.service.JwtService;
@@ -19,8 +24,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.*;
 
 @Slf4j
 @Service
@@ -33,10 +41,13 @@ public class RoomService {
   private final AppProperties props;                     // URL/WS/TTL 등 설정 접근
   private final PageService pageService;
   private final AudienceAuthService audienceAuthService;
+  private final S3Client s3Client;
+  private final JwtService jwtService;
 
 
   @Autowired
   private RedisTemplate<String, String> redisTemplate;  //Redis
+  private RedisTemplate<String, Object> objectRedisTemplate;  //Redis
 
   // 발표자가 새로운 방을 생성할 때 호출
   public CreateRoomResponse createRoom(CreateRoomRequest request) {
@@ -202,5 +213,123 @@ public class RoomService {
             request.getAudienceId(),
             request.getAudienceJWT()
     ));
+  }
+
+  //방 삭제
+  public void closeRoom(String roomId, String token) {
+
+//    String key = "room:" + roomId + ":presenterKeyHash";
+//    String presenterToken = redisTemplate.opsForValue().get(key);
+//
+//    System.out.println("presenterToken: " + presenterToken);
+//
+//    if(!presenterToken.equals(token)) {
+//      throw new CustomException(RoomErrorCode.PRESENTER_KEY_NOT_MATCH);
+//    }
+    Claims claims;
+    try {
+      claims = jwtService.parse(token);
+    } catch (io.jsonwebtoken.ExpiredJwtException e) {
+      log.error("JWT expired: {}", e.getMessage());
+      throw new CustomException(RoomErrorCode.JWT_EXPIRED);
+    } catch (io.jsonwebtoken.SignatureException e) {
+      log.error("JWT signature invalid: {}", e.getMessage());
+      throw new CustomException(RoomErrorCode.JWT_INVALID_SIGNATURE);
+    } catch (io.jsonwebtoken.MalformedJwtException e) {
+      log.error("JWT malformed: {}", e.getMessage());
+      throw new CustomException(RoomErrorCode.JWT_INVALID);
+    } catch (Exception e) {
+      log.error("JWT parse failed: {}", e.getMessage());
+      throw new CustomException(RoomErrorCode.PRESENTER_KEY_NOT_MATCH);
+    }
+
+    // 2️⃣ 클레임에서 roomId와 role 꺼내기
+    String tokenRoomId = claims.get("roomId", String.class);
+    String role = claims.get("role", String.class);
+
+    // 3️⃣ 유효성 검증
+    if (!roomId.equals(tokenRoomId)) {
+      throw new CustomException(RoomErrorCode.ROOM_ID_NOT_MATCH);
+    }
+
+    if (!"presenter".equalsIgnoreCase(role)) {
+      throw new CustomException(RoomErrorCode.PRESENTER_KEY_NOT_MATCH);
+    }
+
+
+    try{
+      //key 패턴
+      String pattern = "room:" + roomId + ":*";
+      String key2 = "room:" + roomId + ":code";
+      String code = redisTemplate.opsForValue().get(key2);
+      if (code == null) {
+        throw new CustomException(RoomErrorCode.CODE_INVALID);
+      }
+      String key3 = "code:" + code;
+
+      // Redis에서 해당 패턴에 매칭되는 모든 키 가져오기
+      Set<String> keys = redisTemplate.keys(pattern);
+      if (keys != null && !keys.isEmpty()) {
+        redisTemplate.delete(keys);
+        redisTemplate.delete(key3);
+//        objectRedisTemplate.delete(keys);
+        log.info("방 관련 키 전부 제거 완료 : roomId={}", roomId);
+      } else {
+        throw new CustomException(GlobalErrorCode.RESOURCE_NOT_FOUND);
+      }
+    } catch (Exception e) {
+      throw new CustomException(GlobalErrorCode.INTERNAL_SERVER_ERROR);
+    }
+
+
+
+    try {
+      String bucket = props.getS3().getBucket();
+
+      String rootPrefix = props.getS3().getRootPrefix(); // presentations
+
+      String prefix = rootPrefix + "/" + roomId + "/";
+
+      log.info("S3 삭제 시작: bucket={}, prefix={}", bucket, prefix);
+
+      ListObjectsV2Request listRequest = ListObjectsV2Request.builder()
+              .bucket(bucket)
+              .prefix(prefix)
+              .build();
+
+
+      ListObjectsV2Response listResponse = s3Client.listObjectsV2(listRequest);
+
+      List<S3Object> contents = listResponse.contents();
+
+
+      if (contents == null || contents.isEmpty()) {
+//        throw new CustomException(GlobalErrorCode.RESOURCE_NOT_FOUND);
+
+      }
+      else{
+        // 삭제할 객체 목록 생성
+        List<ObjectIdentifier> objectsToDelete = listResponse.contents().stream()
+                .map(S3Object::key)
+                .map(k -> ObjectIdentifier.builder().key(k).build())
+                .collect(Collectors.toList());
+
+        // 일괄 삭제
+        DeleteObjectsRequest deleteRequest = DeleteObjectsRequest.builder()
+                .bucket(bucket)
+                .delete(Delete.builder().objects(objectsToDelete).build())
+                .build();
+
+        s3Client.deleteObjects(deleteRequest);
+      }
+
+
+
+    } catch (S3Exception e) {
+      throw new CustomException(GlobalErrorCode.S3_DELETE_FAILED);
+    } catch (Exception e) {
+      log.error("S3 삭제 중 알 수 없는 오류 발생", e);
+      throw new CustomException(GlobalErrorCode.INTERNAL_SERVER_ERROR);
+    }
   }
 }
