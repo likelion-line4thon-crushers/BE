@@ -140,4 +140,10 @@ public class PageService {
         return count;
     }
 
+    public void FocusOn(String sessionId){
+        String key =  "room:" + sessionId + ":presenterPage";
+        String currentPage = redisTemplate.opsForValue().get(key);
+        messagingTemplate.convertAndSend("/topic/presentation/" + sessionId + "/focusOn", currentPage);
+    }
+
 }

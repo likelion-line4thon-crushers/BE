@@ -17,6 +17,7 @@ import line4thon.boini.presenter.room.service.RoomService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -30,22 +31,12 @@ import java.util.Map;
 
 @Slf4j
 @Controller
-//@RequiredArgsConstructor
+@RequiredArgsConstructor
 public class PageController {
 
     private final SimpMessagingTemplate messagingTemplate;
     private final RedisTemplate<String, String> redisTemplate;
     private final PageService pageService;
-
-
-    public PageController(SimpMessagingTemplate messagingTemplate,
-                          RedisTemplate<String, String> redisTemplate,
-                          PageService pageService) {
-        this.messagingTemplate = messagingTemplate;
-        this.redisTemplate = redisTemplate;
-        this.pageService = pageService;
-    }
-
 
     // 발표자가 페이지를 바꿀 때 (클라이언트 -> /app/presentation/{uuid}/pageChange/presenter)
     @MessageMapping("/presentation/{sessionId}/pageChange/presenter")
@@ -72,6 +63,14 @@ public class PageController {
                 msg.getChangedPage(),
                 LocalDateTime.now()
         ));
+    }
+
+    @MessageMapping("/presentation/{sessionId}/focusOn")
+    public ResponseEntity handleFocusOn(@DestinationVariable String sessionId) {
+
+        pageService.FocusOn(sessionId);
+
+        return ResponseEntity.ok("정상적으로 집중이 유도되었습니다.");
     }
 
 }
