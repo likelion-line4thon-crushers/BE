@@ -121,7 +121,7 @@ public class RoomController {
   // 발표자 : 세션 종료(+ AI 리포트 + Redis 청소)
   @DeleteMapping("/close/{roomId}")
   @Operation(
-          summary = "발표자 세션 종료",
+          summary = "발표자 세션 종료(추후 AI 리포트 완성되면 수정될 예정)",
           description = """
           `roomId`와 `발표자 JWT`로 세션을 종료시킵니다.
           """

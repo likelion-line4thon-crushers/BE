@@ -215,7 +215,7 @@ public class RoomService {
     ));
   }
 
-  //방 삭제
+  //방에 대한 모든 정보 삭제
   public void closeRoom(String roomId, String token) {
 
 //    String key = "room:" + roomId + ":presenterKeyHash";
