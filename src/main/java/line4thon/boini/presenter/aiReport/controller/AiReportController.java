@@ -2,7 +2,9 @@ package line4thon.boini.presenter.aiReport.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import line4thon.boini.global.common.response.BaseResponse;
 import line4thon.boini.presenter.aiReport.dto.response.MostReactionStickerResponse;
+import line4thon.boini.presenter.aiReport.dto.response.MostRevisitResponse;
 import line4thon.boini.presenter.aiReport.service.AiReportService;
 import line4thon.boini.presenter.page.dto.response.SlideAudienceCountResponse;
 import lombok.RequiredArgsConstructor;
@@ -37,8 +39,28 @@ public class AiReportController {
           """
     )
     @GetMapping("/{roomId}/mostReactionSticker")
-    public List<MostReactionStickerResponse> getMostReactionSticker(@PathVariable String roomId) {
-        return aiReportService.getMostReactionSticker(roomId);
+    public BaseResponse<List<MostReactionStickerResponse>> getMostReactionSticker(@PathVariable String roomId) {
+        List<MostReactionStickerResponse> list = aiReportService.getMostReactionSticker(roomId);
+
+        return BaseResponse.success(list);
+    }
+
+    @Operation(
+            summary = "재방문 수 가장 많은 슬라이드 반환",
+            description = """
+          재방문 수가 가장 많은 슬라이드를 반환합니다.\n
+          `slide` : 재방문 수가 가장 많은 슬라이드 수\n
+          `totalRevisits` : 해당 슬라이드의 전체 재방문자 수\n
+          `totalAudienceCount` : 전체 청중 수\n
+          `uniqueUsers` : 재방문한 청중 수\n
+          `multiRevisitUsers` : 2번 이상 재방문한 청중 수
+          """
+    )
+    @GetMapping("/{roomId}/mostRevisit")
+    public BaseResponse<MostRevisitResponse> getMostRevisit(@PathVariable String roomId) {
+        MostRevisitResponse mostRevisitResponse = aiReportService.getMostRevisit(roomId);
+
+        return BaseResponse.success(mostRevisitResponse);
     }
 
 

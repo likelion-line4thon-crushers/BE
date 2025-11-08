@@ -125,8 +125,10 @@ public class RoomService {
         int totalPages = request.getTotalPages(); // 이미 int라면 int totalPages = ...
         for (int i = 1; i <= totalPages; i++) {
           // i는 0부터 totalPages-1까지
-          String key = "room:" + roomId + ":slide:" + i;
-          redisTemplate.opsForSet().add(key, "_init_");
+          String key1 = "room:" + roomId + ":slide:" + i;
+          String key2 = "room:" + roomId + ":revisit:" + i;
+          redisTemplate.opsForSet().add(key1, "_init_");
+          redisTemplate.opsForValue().set(key2, "0");
         }
 
         String key2= "room:" + roomId + ":deckId";
