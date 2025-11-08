@@ -74,6 +74,27 @@ public class PageService {
             redisTemplate.opsForSet().remove(key1, msg.getAudienceId());
             redisTemplate.opsForSet().add(key2, msg.getAudienceId());
 
+            String key3 = "room:" + sessionId + ":presenterPage";
+            String presenterPage = redisTemplate.opsForValue().get(key3);
+
+            if (presenterPage == null) {
+                presenterPage = "0"; // 기본 페이지
+            }
+
+            int pageNumber = Integer.parseInt(presenterPage); // Redis 값 -> int
+            int changedPage = msg.getChangedPage();           // int로 가져오기
+
+//            log.info("pageNumber={}, changedPage={}", pageNumber, changedPage);
+
+            if(changedPage != pageNumber) {
+                String key4 = "room:" + sessionId + ":revisit:" + msg.getChangedPage();
+                redisTemplate.opsForValue().increment(key4);
+                String key5 = "room:" + sessionId + ":revisit:user:" + msg.getChangedPage() + ":" + msg.getAudienceId();
+                redisTemplate.opsForValue().increment(key5);
+                String key6 = "room:"+sessionId+":revisit:users:" + msg.getChangedPage();
+                redisTemplate.opsForSet().add(key6, msg.getAudienceId());
+            }
+
         } catch (Exception e){
             log.error("페이지 전환 실패: roomId={}, err={}", sessionId, e.toString());
             throw new CustomException(PageErrorCode.CHANGE_PAGE_ERROR);
