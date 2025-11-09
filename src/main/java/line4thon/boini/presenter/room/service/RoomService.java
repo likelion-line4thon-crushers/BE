@@ -237,7 +237,7 @@ public class RoomService {
   }
 
   //방에 대한 모든 정보 삭제
-  public void closeRoom(String roomId, String token) {
+  public void closeRoom(String roomId) {
 
 //    String key = "room:" + roomId + ":presenterKeyHash";
 //    String presenterToken = redisTemplate.opsForValue().get(key);
@@ -247,35 +247,37 @@ public class RoomService {
 //    if(!presenterToken.equals(token)) {
 //      throw new CustomException(RoomErrorCode.PRESENTER_KEY_NOT_MATCH);
 //    }
-    Claims claims;
-    try {
-      claims = jwtService.parse(token);
-    } catch (io.jsonwebtoken.ExpiredJwtException e) {
-      log.error("JWT expired: {}", e.getMessage());
-      throw new CustomException(RoomErrorCode.JWT_EXPIRED);
-    } catch (io.jsonwebtoken.SignatureException e) {
-      log.error("JWT signature invalid: {}", e.getMessage());
-      throw new CustomException(RoomErrorCode.JWT_INVALID_SIGNATURE);
-    } catch (io.jsonwebtoken.MalformedJwtException e) {
-      log.error("JWT malformed: {}", e.getMessage());
-      throw new CustomException(RoomErrorCode.JWT_INVALID);
-    } catch (Exception e) {
-      log.error("JWT parse failed: {}", e.getMessage());
-      throw new CustomException(RoomErrorCode.PRESENTER_KEY_NOT_MATCH);
-    }
-
-    // 2️⃣ 클레임에서 roomId와 role 꺼내기
-    String tokenRoomId = claims.get("roomId", String.class);
-    String role = claims.get("role", String.class);
-
-    // 3️⃣ 유효성 검증
-    if (!roomId.equals(tokenRoomId)) {
-      throw new CustomException(RoomErrorCode.ROOM_ID_NOT_MATCH);
-    }
-
-    if (!"presenter".equalsIgnoreCase(role)) {
-      throw new CustomException(RoomErrorCode.PRESENTER_KEY_NOT_MATCH);
-    }
+    
+    //발표자 JWT로 검증 삭제
+//    Claims claims;
+//    try {
+//      claims = jwtService.parse(token);
+//    } catch (io.jsonwebtoken.ExpiredJwtException e) {
+//      log.error("JWT expired: {}", e.getMessage());
+//      throw new CustomException(RoomErrorCode.JWT_EXPIRED);
+//    } catch (io.jsonwebtoken.SignatureException e) {
+//      log.error("JWT signature invalid: {}", e.getMessage());
+//      throw new CustomException(RoomErrorCode.JWT_INVALID_SIGNATURE);
+//    } catch (io.jsonwebtoken.MalformedJwtException e) {
+//      log.error("JWT malformed: {}", e.getMessage());
+//      throw new CustomException(RoomErrorCode.JWT_INVALID);
+//    } catch (Exception e) {
+//      log.error("JWT parse failed: {}", e.getMessage());
+//      throw new CustomException(RoomErrorCode.PRESENTER_KEY_NOT_MATCH);
+//    }
+//
+//    // 2️⃣ 클레임에서 roomId와 role 꺼내기
+//    String tokenRoomId = claims.get("roomId", String.class);
+//    String role = claims.get("role", String.class);
+//
+//    // 3️⃣ 유효성 검증
+//    if (!roomId.equals(tokenRoomId)) {
+//      throw new CustomException(RoomErrorCode.ROOM_ID_NOT_MATCH);
+//    }
+//
+//    if (!"presenter".equalsIgnoreCase(role)) {
+//      throw new CustomException(RoomErrorCode.PRESENTER_KEY_NOT_MATCH);
+//    }
 
 
     try{
@@ -304,53 +306,54 @@ public class RoomService {
 
 
 
-    try {
-      String bucket = props.getS3().getBucket();
-
-      String rootPrefix = props.getS3().getRootPrefix(); // presentations
-
-      String prefix = rootPrefix + "/" + roomId + "/";
-
-      log.info("S3 삭제 시작: bucket={}, prefix={}", bucket, prefix);
-
-      ListObjectsV2Request listRequest = ListObjectsV2Request.builder()
-              .bucket(bucket)
-              .prefix(prefix)
-              .build();
-
-
-      ListObjectsV2Response listResponse = s3Client.listObjectsV2(listRequest);
-
-      List<S3Object> contents = listResponse.contents();
-
-
-      if (contents == null || contents.isEmpty()) {
-//        throw new CustomException(GlobalErrorCode.RESOURCE_NOT_FOUND);
-
-      }
-      else{
-        // 삭제할 객체 목록 생성
-        List<ObjectIdentifier> objectsToDelete = listResponse.contents().stream()
-                .map(S3Object::key)
-                .map(k -> ObjectIdentifier.builder().key(k).build())
-                .collect(Collectors.toList());
-
-        // 일괄 삭제
-        DeleteObjectsRequest deleteRequest = DeleteObjectsRequest.builder()
-                .bucket(bucket)
-                .delete(Delete.builder().objects(objectsToDelete).build())
-                .build();
-
-        s3Client.deleteObjects(deleteRequest);
-      }
-
-
-
-    } catch (S3Exception e) {
-      throw new CustomException(GlobalErrorCode.S3_DELETE_FAILED);
-    } catch (Exception e) {
-      log.error("S3 삭제 중 알 수 없는 오류 발생", e);
-      throw new CustomException(GlobalErrorCode.INTERNAL_SERVER_ERROR);
-    }
+    //S3에서 이미지 삭제
+//    try {
+//      String bucket = props.getS3().getBucket();
+//
+//      String rootPrefix = props.getS3().getRootPrefix(); // presentations
+//
+//      String prefix = rootPrefix + "/" + roomId + "/";
+//
+//      log.info("S3 삭제 시작: bucket={}, prefix={}", bucket, prefix);
+//
+//      ListObjectsV2Request listRequest = ListObjectsV2Request.builder()
+//              .bucket(bucket)
+//              .prefix(prefix)
+//              .build();
+//
+//
+//      ListObjectsV2Response listResponse = s3Client.listObjectsV2(listRequest);
+//
+//      List<S3Object> contents = listResponse.contents();
+//
+//
+//      if (contents == null || contents.isEmpty()) {
+////        throw new CustomException(GlobalErrorCode.RESOURCE_NOT_FOUND);
+//
+//      }
+//      else{
+//        // 삭제할 객체 목록 생성
+//        List<ObjectIdentifier> objectsToDelete = listResponse.contents().stream()
+//                .map(S3Object::key)
+//                .map(k -> ObjectIdentifier.builder().key(k).build())
+//                .collect(Collectors.toList());
+//
+//        // 일괄 삭제
+//        DeleteObjectsRequest deleteRequest = DeleteObjectsRequest.builder()
+//                .bucket(bucket)
+//                .delete(Delete.builder().objects(objectsToDelete).build())
+//                .build();
+//
+//        s3Client.deleteObjects(deleteRequest);
+//      }
+//
+//
+//
+//    } catch (S3Exception e) {
+//      throw new CustomException(GlobalErrorCode.S3_DELETE_FAILED);
+//    } catch (Exception e) {
+//      log.error("S3 삭제 중 알 수 없는 오류 발생", e);
+//      throw new CustomException(GlobalErrorCode.INTERNAL_SERVER_ERROR);
+//    }
   }
 }

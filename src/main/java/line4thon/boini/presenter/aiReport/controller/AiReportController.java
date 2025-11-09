@@ -65,7 +65,7 @@ public class AiReportController {
     }
 
     @Operation(
-            summary = "총 이미지 반응, 총 실시간 질문 수, 반주목해야 할 슬라이드",
+            summary = "총 이미지 반응, 총 실시간 질문 수, 주목해야 할 슬라이드",
             description = """
           AI 리포트 맨 위 부분 반환하는 API 입니다.
           """

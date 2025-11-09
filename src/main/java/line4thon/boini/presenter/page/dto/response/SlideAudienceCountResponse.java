@@ -6,7 +6,7 @@ import lombok.Getter;
 @Getter
 @AllArgsConstructor
 public class SlideAudienceCountResponse {
-    private int frontCount;
-    private int currentCount;
-    private int backCount;
+    private Long frontCount;
+    private Long currentCount;
+    private Long backCount;
 }

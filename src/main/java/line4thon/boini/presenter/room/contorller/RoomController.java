@@ -90,12 +90,15 @@ public class RoomController {
     String roomId = codeService.resolveRoomIdByCodeOrThrow(code);
     var issued = audienceAuth.issueAudienceToken(roomId);
 
+    String key5 = "room:" + roomId + ":presenterPage";
+    String presenterPage = redisTemplate.opsForValue().get(key5);
+
     //Redis에 유저ID 추가
     String key = "room:" + roomId + ":audience:online";
     redisTemplate.opsForSet().add(key, issued.audienceId());
 
     //Redis에 유저 슬라이드1에 추가
-    String key2 = "room:" + roomId + ":slide:1";
+    String key2 = "room:" + roomId + ":slide:" + presenterPage;
     redisTemplate.opsForSet().add(key2, issued.audienceId());
 
     String key3= "room:" + roomId + ":deckId";
@@ -112,7 +115,8 @@ public class RoomController {
         issued.audienceId(),
         issued.audienceToken(),
         deckId,
-        totalPages
+        totalPages,
+        presenterPage
     ));
   }
 
@@ -136,21 +140,22 @@ public class RoomController {
           `roomId`와 `발표자 JWT`로 세션을 종료시킵니다.
           """
   )
-  public ResponseEntity closeRoom(@PathVariable("roomId") String roomId, @RequestHeader(value = "Authorization", required = false) String authHeader) {
+  public ResponseEntity closeRoom(@PathVariable("roomId") String roomId) {
 
 //    String token = jwtHandshakeInterceptor.extractBearer(request.getHeader("Authorization"));
 //
 //    if (token == null)
 //      throw new CustomException(JwtErrorCode.JWT_INVALID);
 
-    String token = null;
-    if (authHeader != null && authHeader.startsWith("Bearer ")) {
-      token = authHeader.substring(7); // "Bearer " 잘라내기
-    }
+    //발표자 JWT 검증 삭제
+//    String token = null;
+//    if (authHeader != null && authHeader.startsWith("Bearer ")) {
+//      token = authHeader.substring(7); // "Bearer " 잘라내기
+//    }
+//
+//    System.out.println("token: " + token);
 
-    System.out.println("token: " + token);
-
-    roomService.closeRoom(roomId, token);
+    roomService.closeRoom(roomId);
 
     return ResponseEntity.ok("방을 성공적으로 삭제하였습니다.");
   }
