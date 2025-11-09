@@ -8,6 +8,7 @@ import line4thon.boini.global.common.exception.CustomException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.stream.StreamRecords;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -24,6 +25,7 @@ public class QuestionService {
   private final StringRedisTemplate redis;
   private final SimpMessagingTemplate broker;
   private static final long STREAM_MAXLEN = 10_000L;
+  private final RedisTemplate<String, String> redisTemplate;
 
   // 질문 생성 → 저장 → 실시간 브로드캐스트
   public CreateQuestionResponse create(String roomId, CreateQuestionRequest request) {
@@ -36,6 +38,9 @@ public class QuestionService {
     String hKey = "room:%s:question:%s".formatted(roomId, id);
     String zKey = "room:%s:page:%d:questions".formatted(roomId, request.slide());
     String zRoom = "room:%s:questions".formatted(roomId);
+    String key1 = "room:"+roomId+":questionCount";
+
+    redisTemplate.opsForValue().increment(key1);
 
     Map<String, String> h = new LinkedHashMap<>();
     h.put("id", id);
