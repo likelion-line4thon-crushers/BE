@@ -13,4 +13,5 @@ public class JoinResponse {
   private final String deckId;
   private final Integer totalPages;
   private final String currentPage;
+  private final String sessionStatus;
 }

@@ -110,6 +110,8 @@ public class RoomController {
 
     int totalPages = pageService.countSlideKeys(roomId);
 
+    String sessionStatus = roomService.getSessionStatus(roomId).name();
+
     return BaseResponse.success(new JoinResponse(
         roomId,
         code,
@@ -117,7 +119,8 @@ public class RoomController {
         issued.audienceToken(),
         deckId,
         totalPages,
-        presenterPage
+        presenterPage,
+        sessionStatus
     ));
   }
 
