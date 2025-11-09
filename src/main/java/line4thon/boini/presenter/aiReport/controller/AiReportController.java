@@ -7,8 +7,11 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import line4thon.boini.global.common.response.BaseResponse;
 import line4thon.boini.presenter.aiReport.dto.response.MostReactionStickerResponse;
 import line4thon.boini.presenter.aiReport.dto.response.MostRevisitResponse;
+import line4thon.boini.presenter.aiReport.dto.response.ReportResponse;
 import line4thon.boini.presenter.aiReport.dto.response.ReportTopResponse;
+import line4thon.boini.presenter.aiReport.mapper.ReportMapper;
 import line4thon.boini.presenter.aiReport.service.AiReportService;
+import line4thon.boini.presenter.aiReport.service.ReportService;
 import line4thon.boini.presenter.page.dto.response.SlideAudienceCountResponse;
 import line4thon.boini.presenter.room.entity.Report;
 import line4thon.boini.presenter.room.repository.ReportRepository;
@@ -37,6 +40,8 @@ public class AiReportController {
     private final AiReportService aiReportService;
     private final ReportRepository reportRepository;
     private final ObjectMapper objectMapper;
+
+    private final ReportService reportService;
 
     @Operation(
             summary = "리액션 스티커를 가장 많이 받은 슬라이드 반환",
@@ -112,5 +117,11 @@ public class AiReportController {
         return BaseResponse.success(reportTop);
     }
 
+    @GetMapping("/{roomId}")
+    @Operation(summary = "roomId 기준 리포트 조회", description = "특정 roomId의 리포트를 반환합니다.")
+    public BaseResponse<ReportResponse> getByRoomId(@PathVariable String roomId) {
+        var entity = reportService.getReportByRoomId(roomId);
+        return BaseResponse.success(ReportMapper.toDto(entity));
+    }
 
 }
