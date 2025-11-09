@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import line4thon.boini.presenter.aiReport.dto.response.MostReactionStickerResponse;
 import line4thon.boini.presenter.aiReport.dto.response.MostRevisitResponse;
+import line4thon.boini.presenter.aiReport.dto.response.ReportTopResponse;
 import line4thon.boini.presenter.aiReport.dto.response.RevisitResponse;
 import line4thon.boini.presenter.page.service.PageService;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -25,6 +27,8 @@ public class AiReportService {
     private final RedisTemplate<String, Object> objectRedisTemplate;
     private final ObjectMapper objectMapper;
     private final PageService pageService;
+    private final StringRedisTemplate redis;
+
 
     public List<MostReactionStickerResponse> getMostReactionSticker(String roomId) {
         String key = "room:" + roomId + ":stickers";
@@ -44,7 +48,8 @@ public class AiReportService {
         for (MapRecord<String, Object, Object> record : records) {
             log.info("Raw record value: {}", record.getValue());  // 실제 Redis에서 가져온 값 확인
 
-            Map<String, Object> value = objectMapper.convertValue(record.getValue(), new TypeReference<>(){});
+            Map<String, Object> value = objectMapper.convertValue(record.getValue(), new TypeReference<>() {
+            });
             log.info("Converted record value: {}", value);
 
             try {
@@ -148,7 +153,6 @@ public class AiReportService {
             // 값이 없으면 0으로 처리
             int revisits = (revisitStr != null) ? Integer.parseInt(revisitStr) : 0;
 
-            // RevisitResponse 생성 후 리스트에 추가
             revisitList.add(RevisitResponse.builder()
                     .slide(slide)
                     .revisits(revisits)
@@ -158,5 +162,164 @@ public class AiReportService {
         return revisitList;
     }
 
+    public ReportTopResponse getReportTop(String roomId) {
 
+        String key1 = "room:" + roomId + ":stickers";
+        String key2 = "room:" + roomId + ":questionCount";
+
+        Long emoji = objectRedisTemplate.opsForStream().size(key1);
+        System.out.println("emoji Stream size = " + emoji);
+
+        String question = redisTemplate.opsForValue().get(key2);
+        System.out.println("question Stream size = " + question);
+
+        Long focusSlide = Long.valueOf(getFocusSlide(roomId));
+
+        return ReportTopResponse.builder()
+                .totalEmoji(emoji)
+                .totalQuestion((question != null) ? Long.parseLong(question) : 0L)
+                .focusSlide(focusSlide)
+                .build();
+    }
+
+    public int getFocusSlide(String roomId) {
+
+        int slides = pageService.countSlideKeys(roomId); // 전체 슬라이드 개수
+        int[] questionScores = new int[slides]; // index: 슬라이드 번호, 값: 점수
+
+        List<Long> slidesWithMostQuestions = getSlidesWithMostQuestions(roomId);
+
+        // 최다 질문 점수 +5
+        for (Long slideNum : slidesWithMostQuestions) {
+            if (slideNum > 0 && slideNum <= slides) {
+                questionScores[slideNum.intValue() - 1] += 5;
+            }
+        }
+
+        log.info("최다 질문 슬라이드 : roomId={}, slide={}", roomId, slidesWithMostQuestions);
+
+        List<RevisitResponse> revisitList = getRevisit(roomId);
+
+// 1) 가장 많이 재방문한 횟수
+        int maxRevisits = revisitList.stream()
+                .mapToInt(RevisitResponse::getRevisits)
+                .max()
+                .orElse(0);
+
+        if (maxRevisits > 0) { // maxRevisits가 0보다 클 때만 점수 적용
+            // 2) maxRevisits 가진 슬라이드 모두 리스트로 추출
+            List<Integer> mostRevisitedSlides = revisitList.stream()
+                    .filter(r -> r.getRevisits() == maxRevisits)
+                    .map(RevisitResponse::getSlide)
+                    .sorted()
+                    .toList();
+
+            // 최다 방문 점수 +4
+            for (Integer slideNum : mostRevisitedSlides) {
+                if (slideNum > 0 && slideNum <= slides) {
+                    questionScores[slideNum - 1] += 4;
+                }
+            }
+            log.info("최다 방문수 슬라이드 : roomId={}, slide={}", roomId, mostRevisitedSlides);
+        }
+
+
+
+        List<Integer> mostReactionSlides = findMostReactionSlides(roomId);
+
+        // 최다 이모지 점수 +3
+        for (Integer slideNum : mostReactionSlides) {
+            if (slideNum > 0 && slideNum <= slides) {
+                questionScores[slideNum - 1] += 3;
+            }
+        }
+
+        log.info("최다 이모지 슬라이드 : roomId={}, slide={}", roomId, mostReactionSlides);
+        log.info("최종 스코어 : roomId={}, score={}", roomId, questionScores);
+
+        int maxIndex = 0;
+        for (int i = 1; i < questionScores.length; i++) {
+            if (questionScores[i] > questionScores[maxIndex]) {
+                maxIndex = i;
+            }
+        }
+
+        return maxIndex + 1; // 0-based index 보정
+    }
+
+    // 가장 질문 수 많은 슬라이드 반환 (안전하게 수정)
+    public List<Long> getSlidesWithMostQuestions(String roomId) {
+        String pattern = "room:%s:page:*:questions".formatted(roomId);
+
+        Set<String> keys = redis.keys(pattern);
+        if (keys == null || keys.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, Long> slideCountMap = new HashMap<>();
+
+        for (String key : keys) {
+            String[] parts = key.split(":");
+            if (parts.length < 4) {
+                log.warn("Unexpected key format: {}", key);
+                continue; // 형식이 맞지 않으면 건너뜀
+            }
+
+            try {
+                long slide = Long.parseLong(parts[3]);
+                Long count = redis.opsForZSet().zCard(key);
+                slideCountMap.put(slide, (count != null ? count : 0L));
+            } catch (NumberFormatException e) {
+                log.warn("Invalid slide number in key: {}", key);
+            }
+        }
+
+        long maxCount = slideCountMap.values().stream()
+                .mapToLong(Long::longValue)
+                .max()
+                .orElse(0L);
+
+        return slideCountMap.entrySet().stream()
+                .filter(e -> e.getValue() == maxCount)
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
+    }
+
+    // 최다 이모지 슬라이드 리스트
+    public List<Integer> findMostReactionSlides(String roomId) {
+
+        String key = "room:" + roomId + ":stickers";
+
+        List<MapRecord<String, Object, Object>> records =
+                objectRedisTemplate.opsForStream().range(key, Range.unbounded());
+
+        if (records == null || records.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Integer, Integer> slideCountMap = new HashMap<>();
+
+        for (MapRecord<String, Object, Object> record : records) {
+            Object slideObj = record.getValue().get("slide");
+            if (slideObj == null) continue;
+
+            try {
+                int slide = Integer.parseInt(slideObj.toString());
+                slideCountMap.merge(slide, 1, Integer::sum);
+            } catch (NumberFormatException e) {
+                log.warn("Invalid slide value in stream: {}", slideObj);
+            }
+        }
+
+        int maxCount = slideCountMap.values().stream()
+                .max(Integer::compare)
+                .orElse(0);
+
+        return slideCountMap.entrySet().stream()
+                .filter(e -> e.getValue() == maxCount)
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
+    }
 }

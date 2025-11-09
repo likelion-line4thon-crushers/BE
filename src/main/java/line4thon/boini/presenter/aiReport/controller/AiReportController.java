@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import line4thon.boini.global.common.response.BaseResponse;
 import line4thon.boini.presenter.aiReport.dto.response.MostReactionStickerResponse;
 import line4thon.boini.presenter.aiReport.dto.response.MostRevisitResponse;
+import line4thon.boini.presenter.aiReport.dto.response.ReportTopResponse;
 import line4thon.boini.presenter.aiReport.service.AiReportService;
 import line4thon.boini.presenter.page.dto.response.SlideAudienceCountResponse;
 import lombok.RequiredArgsConstructor;
@@ -50,7 +51,7 @@ public class AiReportController {
             description = """
           재방문 수가 가장 많은 슬라이드를 반환합니다.\n
           `slide` : 재방문 수가 가장 많은 슬라이드 수\n
-          `totalRevisits` : 해당 슬라이드의 전체 재방문자 수\n
+          `totalRevisits` : 해당 슬라이드의 전체 방문 수\n
           `totalAudienceCount` : 전체 청중 수\n
           `uniqueUsers` : 재방문한 청중 수\n
           `multiRevisitUsers` : 2번 이상 재방문한 청중 수
@@ -61,6 +62,18 @@ public class AiReportController {
         MostRevisitResponse mostRevisitResponse = aiReportService.getMostRevisit(roomId);
 
         return BaseResponse.success(mostRevisitResponse);
+    }
+
+    @Operation(
+            summary = "총 이미지 반응, 총 실시간 질문 수, 반주목해야 할 슬라이드",
+            description = """
+          AI 리포트 맨 위 부분 반환하는 API 입니다.
+          """
+    )
+    @GetMapping("/{roomId}/getReport/top")
+    public BaseResponse<ReportTopResponse> getReportTop(@PathVariable String roomId) {
+        ReportTopResponse reportTop = aiReportService.getReportTop(roomId);
+        return BaseResponse.success(reportTop);
     }
 
 
