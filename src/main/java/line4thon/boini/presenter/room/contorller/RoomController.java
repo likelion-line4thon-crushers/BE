@@ -9,6 +9,7 @@ import line4thon.boini.audience.room.dto.request.LeaveRoomRequest;
 import line4thon.boini.audience.room.dto.response.JoinResponse;
 import line4thon.boini.audience.room.dto.response.LeaveRoomResponse;
 import line4thon.boini.audience.room.service.AudienceAuthService;
+import line4thon.boini.global.WsUrlResolver;
 import line4thon.boini.global.common.exception.CustomException;
 import line4thon.boini.global.common.response.BaseResponse;
 import line4thon.boini.global.jwt.service.JwtService;
@@ -57,8 +58,9 @@ public class RoomController {
       summary = "발표자 방 생성",
       description = "발표자가 새로운 방을 생성합니다."
   )
-  public BaseResponse<CreateRoomResponse> create(@Valid @RequestBody CreateRoomRequest request) {
-    var response = roomService.createRoom(request);
+  public BaseResponse<CreateRoomResponse> create(@Valid @RequestBody CreateRoomRequest request, HttpServletRequest http) {
+    String wsUrl = WsUrlResolver.resolve(http);
+    var response = roomService.createRoom(request,wsUrl);
     return BaseResponse.success(response);
   }
 
