@@ -16,6 +16,7 @@ import line4thon.boini.global.websocket.JwtHandshakeInterceptor;
 import line4thon.boini.presenter.page.service.PageService;
 import line4thon.boini.presenter.room.dto.response.CreateRoomResponse;
 import line4thon.boini.presenter.room.dto.response.TokenResponse;
+import line4thon.boini.presenter.room.entity.SessionStatus;
 import line4thon.boini.presenter.room.service.CodeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -160,5 +161,22 @@ public class RoomController {
     return ResponseEntity.ok("방을 성공적으로 삭제하였습니다.");
   }
 
+  // 발표자: 세션 시작
+  @PostMapping("/{roomId}/session/start")
+  @Operation(
+      summary = "세션 시작",
+      description = """
+        발표자가 세션을 시작합니다.  
+        세션 상태가 `waiting` → `live`로 전환되고,  
+        모든 청중에게 WebSocket 브로드캐스트로 알림이 전송됩니다.
+        """
+  )
+  public BaseResponse<Map<String, String>> startSession(@PathVariable String roomId) {
+    roomService.setSessionStatus(roomId, SessionStatus.live);
+    return BaseResponse.success(Map.of(
+        "roomId", roomId,
+        "status", "live"
+    ));
+  }
 
 }
