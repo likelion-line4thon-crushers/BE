@@ -139,7 +139,15 @@ public class PageService {
             else back+=count;
         }
 
-        return new SlideAudienceCountResponse(front, current, back);
+        int total = front + current + back;
+
+        log.info("청중 분포 front={} , current={}, back={}", front, current, back);
+
+        long front_per = Math.round(front * 100.0 / total);
+        long current_per = Math.round(current * 100.0 / total);
+        long back_per = Math.round(back * 100.0 / total);
+
+        return new SlideAudienceCountResponse(front_per, current_per, back_per);
     }
 
     public int countSlideKeys(String roomId) {
