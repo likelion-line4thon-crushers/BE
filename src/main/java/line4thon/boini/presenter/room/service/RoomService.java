@@ -90,11 +90,10 @@ public class RoomService {
   }
 
   // 발표자가 새로운 방을 생성할 때 호출
-  public CreateRoomResponse createRoom(CreateRoomRequest request) {
+  public CreateRoomResponse createRoom(CreateRoomRequest request, String wsUrl) {
     validateRequest(request);
 
     final String joinBase = props.getUrls().getJoinBase();
-    final String wsUrl = props.getUrls().getWs();
 
     if (joinBase == null || joinBase.isBlank())
       throw new CustomException(RoomErrorCode.INVALID_JOIN_BASE_URL);
