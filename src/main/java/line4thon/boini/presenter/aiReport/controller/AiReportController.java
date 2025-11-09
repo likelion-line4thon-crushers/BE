@@ -1,5 +1,7 @@
 package line4thon.boini.presenter.aiReport.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import line4thon.boini.global.common.response.BaseResponse;
@@ -8,6 +10,8 @@ import line4thon.boini.presenter.aiReport.dto.response.MostRevisitResponse;
 import line4thon.boini.presenter.aiReport.dto.response.ReportTopResponse;
 import line4thon.boini.presenter.aiReport.service.AiReportService;
 import line4thon.boini.presenter.page.dto.response.SlideAudienceCountResponse;
+import line4thon.boini.presenter.room.entity.Report;
+import line4thon.boini.presenter.room.repository.ReportRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -18,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @RestController
@@ -30,6 +35,8 @@ public class AiReportController {
     private final RedisTemplate<String, String> redisTemplate;
     private final RedisTemplate<String, Object> objectRedisTemplate;
     private final AiReportService aiReportService;
+    private final ReportRepository reportRepository;
+    private final ObjectMapper objectMapper;
 
     @Operation(
             summary = "리액션 스티커를 가장 많이 받은 슬라이드 반환",
@@ -42,6 +49,15 @@ public class AiReportController {
     @GetMapping("/{roomId}/mostReactionSticker")
     public BaseResponse<List<MostReactionStickerResponse>> getMostReactionSticker(@PathVariable String roomId) {
         List<MostReactionStickerResponse> list = aiReportService.getMostReactionSticker(roomId);
+
+        // 1️⃣ roomId로 Report 조회
+        Optional<Report> optionalReport = reportRepository.findByRoomId(roomId);
+
+        // 2️⃣ 존재할 때만 popularEmoji 값 변경
+        optionalReport.ifPresent(report -> {
+            report.setPopularEmoji(list.toString());
+            reportRepository.save(report); // JPA가 더티체킹으로 자동 업데이트함
+        });
 
         return BaseResponse.success(list);
     }
@@ -60,6 +76,26 @@ public class AiReportController {
     @GetMapping("/{roomId}/mostRevisit")
     public BaseResponse<MostRevisitResponse> getMostRevisit(@PathVariable String roomId) {
         MostRevisitResponse mostRevisitResponse = aiReportService.getMostRevisit(roomId);
+
+        // 1️⃣ roomId로 Report 조회
+        Optional<Report> optionalReport = reportRepository.findByRoomId(roomId);
+
+        optionalReport.ifPresent(report -> {
+            try {
+                // mostRevisitResponse가 null이면 빈 JSON 배열로 처리
+                String revisitJson = (mostRevisitResponse != null)
+                        ? objectMapper.writeValueAsString(mostRevisitResponse)
+                        : "[]";
+
+                report.setRevisit(revisitJson);
+                reportRepository.save(report); // JPA가 더티체킹으로 자동 업데이트
+            } catch (JsonProcessingException e) {
+                e.printStackTrace();
+                // JSON 변환 실패 시 빈 배열로 안전하게 처리
+                report.setRevisit("[]");
+                reportRepository.save(report);
+            }
+        });
 
         return BaseResponse.success(mostRevisitResponse);
     }

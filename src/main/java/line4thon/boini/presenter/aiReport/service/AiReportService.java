@@ -7,6 +7,8 @@ import line4thon.boini.presenter.aiReport.dto.response.MostRevisitResponse;
 import line4thon.boini.presenter.aiReport.dto.response.ReportTopResponse;
 import line4thon.boini.presenter.aiReport.dto.response.RevisitResponse;
 import line4thon.boini.presenter.page.service.PageService;
+import line4thon.boini.presenter.room.entity.Report;
+import line4thon.boini.presenter.room.repository.ReportRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Range;
@@ -28,6 +30,7 @@ public class AiReportService {
     private final ObjectMapper objectMapper;
     private final PageService pageService;
     private final StringRedisTemplate redis;
+    private final ReportRepository reportRepository;
 
 
     public List<MostReactionStickerResponse> getMostReactionSticker(String roomId) {
@@ -127,8 +130,17 @@ public class AiReportService {
             }
         }
 
+//        String key4 = "room:" + roomId + ":enterAudienceCount";
+//        int totalAudienceCount = Integer.parseInt(redisTemplate.opsForValue().get(key4));
+
         String key4 = "room:" + roomId + ":enterAudienceCount";
-        int totalAudienceCount = Integer.parseInt(redisTemplate.opsForValue().get(key4));
+        String countStr = redisTemplate.opsForValue().get(key4);
+        int totalAudienceCount = 0;
+
+        if (countStr != null && !countStr.isEmpty()) {
+            totalAudienceCount = Integer.parseInt(countStr);
+        }
+
 
         return MostRevisitResponse.builder()
                 .slide(slide)
@@ -164,6 +176,9 @@ public class AiReportService {
 
     public ReportTopResponse getReportTop(String roomId) {
 
+        // 1️⃣ roomId로 Report 조회
+        Optional<Report> optionalReport = reportRepository.findByRoomId(roomId);
+
         String key1 = "room:" + roomId + ":stickers";
         String key2 = "room:" + roomId + ":questionCount";
 
@@ -175,12 +190,41 @@ public class AiReportService {
 
         Long focusSlide = Long.valueOf(getFocusSlide(roomId));
 
+
+
+//        // 2️⃣ 존재할 때만 값 변경
+//        optionalReport.ifPresent(report -> {
+//            report.setEmojiCount(Integer.parseInt(String.valueOf(emoji)));
+//            report.setQuestionCount(Integer.parseInt(question));
+//            report.setAttentionSlide(Integer.parseInt(String.valueOf(focusSlide)));
+//            reportRepository.save(report); // JPA가 더티체킹으로 자동 업데이트함
+//        });
+
+        optionalReport.ifPresent(report -> {
+            report.setEmojiCount(safeParse(emoji, 0));
+            report.setQuestionCount(safeParse(question, 0));
+            report.setAttentionSlide(safeParse(focusSlide, 0));
+            reportRepository.save(report); // JPA가 더티체킹으로 자동 업데이트함
+        });
+
         return ReportTopResponse.builder()
                 .totalEmoji(emoji)
                 .totalQuestion((question != null) ? Long.parseLong(question) : 0L)
                 .focusSlide(focusSlide)
                 .build();
     }
+
+    private int safeParse(Object value, int defaultValue) {
+        try {
+            if (value == null) return defaultValue;
+            String str = String.valueOf(value).trim();
+            if (str.isEmpty() || str.equalsIgnoreCase("null")) return defaultValue;
+            return Integer.parseInt(str);
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
 
     public int getFocusSlide(String roomId) {
 
