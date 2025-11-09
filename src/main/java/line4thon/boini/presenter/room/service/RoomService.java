@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.Map;
 
 import io.jsonwebtoken.Claims;
 import line4thon.boini.audience.room.dto.request.LeaveRoomRequest;
@@ -27,10 +28,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
+import line4thon.boini.presenter.room.entity.SessionStatus;
 
 @Slf4j
 @Service
@@ -50,6 +53,41 @@ public class RoomService {
   @Autowired
   private RedisTemplate<String, String> redisTemplate;  //Redis
   private final ReportRepository reportRepository;
+
+  // 세션 상태 브로드캐스트를 위해 주입
+  private final SimpMessagingTemplate broker;
+
+  private String sessionStatusKey(String roomId) {
+    return "room:" + roomId + ":session:status";
+  }
+
+  // 세션 상태 초기화(없을 경우 waiting으로)
+  public void initSessionStatus(String roomId) {
+    String key = sessionStatusKey(roomId);
+    // get 후 없으면 set (RedisTemplate에는 setIfAbsent이 있으나, null 처리로 간단히)
+    if (redisTemplate.opsForValue().get(key) == null) {
+      redisTemplate.opsForValue().set(key, SessionStatus.waiting.name());
+    }
+  }
+
+  // 세션 상태 조회
+  public SessionStatus getSessionStatus(String roomId) {
+    String v = redisTemplate.opsForValue().get(sessionStatusKey(roomId));
+    return (v == null) ? SessionStatus.waiting : SessionStatus.valueOf(v);
+  }
+
+  // 세션 상태 설정 + 웹소켓 브로드캐스트
+  public void setSessionStatus(String roomId, SessionStatus status) {
+    redisTemplate.opsForValue().set(sessionStatusKey(roomId), status.name());
+
+    Map<String, String> evt = Map.of(
+        "type", "SESSION_STATE",
+        "status", status.name(),
+        "updatedAt", String.valueOf(System.currentTimeMillis())
+    );
+    // 공개 채널로 브로드캐스트 (청중/발표자 모두 구독)
+    broker.convertAndSend("/topic/p/" + roomId + "/public", evt);
+  }
 
   // 발표자가 새로운 방을 생성할 때 호출
   public CreateRoomResponse createRoom(CreateRoomRequest request) {
@@ -149,6 +187,8 @@ public class RoomService {
             .build();
 
         reportRepository.save(report);
+
+        initSessionStatus(roomId);
 
         return new CreateRoomResponse(
             roomId,
