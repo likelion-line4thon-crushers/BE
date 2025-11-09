@@ -18,7 +18,9 @@ import line4thon.boini.global.jwt.service.JwtService;
 import line4thon.boini.presenter.page.service.PageService;
 import line4thon.boini.presenter.room.dto.request.CreateRoomRequest;
 import line4thon.boini.presenter.room.dto.response.CreateRoomResponse;
+import line4thon.boini.presenter.room.entity.Report;
 import line4thon.boini.presenter.room.exception.RoomErrorCode;
+import line4thon.boini.presenter.room.repository.ReportRepository;
 import line4thon.boini.presenter.room.service.CodeService.CodeReservation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,7 +49,7 @@ public class RoomService {
 
   @Autowired
   private RedisTemplate<String, String> redisTemplate;  //Redis
-  private RedisTemplate<String, Object> objectRedisTemplate;  //Redis
+  private final ReportRepository reportRepository;
 
   // 발표자가 새로운 방을 생성할 때 호출
   public CreateRoomResponse createRoom(CreateRoomRequest request) {
@@ -133,6 +135,20 @@ public class RoomService {
 
         String key2= "room:" + roomId + ":deckId";
         redisTemplate.opsForValue().set(key2, deckId);
+
+        // --- Report 초기화 저장 ---
+        Report report = Report.builder()
+            .roomId(roomId)
+            .emojiCount(null)
+            .questionCount(null)
+            .attentionSlide(null)
+            .top3Question(null)
+            .popularEmoji(null)
+            .popularQuestion(null)
+            .revisit(null)
+            .build();
+
+        reportRepository.save(report);
 
         return new CreateRoomResponse(
             roomId,
