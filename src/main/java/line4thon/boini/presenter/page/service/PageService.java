@@ -1,7 +1,9 @@
 package line4thon.boini.presenter.page.service;
 
+import line4thon.boini.audience.option.dto.response.UnlockResponse;
 import line4thon.boini.global.common.exception.CustomException;
 import line4thon.boini.global.common.response.BaseResponse;
+import line4thon.boini.presenter.aiReport.exception.ReportErrorCode;
 import line4thon.boini.presenter.page.dto.request.ChangeAudiencePageRequest;
 import line4thon.boini.presenter.page.dto.request.ChangePageRequest;
 import line4thon.boini.presenter.page.dto.response.ChangePageResponse;
@@ -48,6 +50,26 @@ public class PageService {
             messagingTemplate.convertAndSend("/topic/presentation/" + sessionId + "/pageChange", msg);
             log.info("페이지 전환 브로드캐스트 완료: roomId={}, beforePage={}, changedPage={}", sessionId, msg.getBeforePage(), msg.getChangedPage());
             redisTemplate.opsForValue().set("room:" + sessionId + ":presenterPage", msg.getChangedPage().toString());
+
+            String maxSlide = redisTemplate.opsForValue().get("room:" + sessionId + ":maxSlide");
+
+            if(maxSlide==null) maxSlide = "0";
+
+            if(Integer.parseInt(maxSlide) < msg.getChangedPage()){
+                redisTemplate.opsForValue().set("room:" + sessionId + ":maxSlide",  msg.getChangedPage().toString());
+                String totalPage = redisTemplate.opsForValue().get("room:" + sessionId + ":totalPage");
+                String unlock = redisTemplate.opsForValue().get("room:" + sessionId + ":option:slideUnlock");
+
+                UnlockResponse response = new UnlockResponse().builder()
+                        .maxRevealedPage(msg.getChangedPage().toString())
+                        .totalPages(totalPage)
+                        .revealAllSlides(unlock)
+                        .build();
+
+                messagingTemplate.convertAndSend("/topic/presentation/" + sessionId + "/option/unlock", response);
+
+            }
+
         } catch (Exception e){
             log.error("페이지 전환 실패: roomId={}, err={}", sessionId, e.toString());
             throw new CustomException(PageErrorCode.NOT_RECEIVE_PAGE_DATA);
@@ -122,7 +144,12 @@ public class PageService {
         int current = 0;
         int back = 0;
 
-        int slides = countSlideKeys(roomId);
+        String totalpage = redisTemplate.opsForValue().get("room:" + roomId + ":totalPage");
+        if (totalpage == null) {
+            throw new CustomException(ReportErrorCode.TOTAL_PAGE_NULL);
+        }
+        int slides = Integer.parseInt(totalpage);
+
 //        System.out.println("슬라이드 수 : "+slides);
 
         for (int slide = 1; slide <= slides; slide++) {
@@ -150,6 +177,7 @@ public class PageService {
         return new SlideAudienceCountResponse(front_per, current_per, back_per);
     }
 
+    // 총 페이지 수 반환
     public int countSlideKeys(String roomId) {
         ScanOptions options = ScanOptions.scanOptions()
                 .match("room:" + roomId + ":slide:*")
