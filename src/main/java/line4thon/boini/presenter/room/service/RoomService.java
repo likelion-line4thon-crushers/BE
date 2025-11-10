@@ -16,6 +16,7 @@ import line4thon.boini.global.common.exception.GlobalErrorCode;
 import line4thon.boini.global.common.response.BaseResponse;
 import line4thon.boini.global.config.AppProperties;
 import line4thon.boini.global.jwt.service.JwtService;
+import line4thon.boini.presenter.aiReport.exception.ReportErrorCode;
 import line4thon.boini.presenter.page.service.PageService;
 import line4thon.boini.presenter.room.dto.request.CreateRoomRequest;
 import line4thon.boini.presenter.room.dto.response.CreateRoomResponse;
@@ -116,6 +117,14 @@ public class RoomService {
     redisTemplate.opsForSet().size("room:" + roomId + ":audience:online");  //방 redis KEY 생성
 
     redisTemplate.opsForValue().set("room:" + roomId + ":presenterPage", "1"); //방 redis KEY 생성
+
+    redisTemplate.opsForValue().set("room:" + roomId + ":totalPage", String.valueOf(request.getTotalPages())); //방 redis KEY 생성
+
+    redisTemplate.opsForValue().set("room:"+roomId+":option:sticker", "true");
+    redisTemplate.opsForValue().set("room:"+roomId+":option:question", "true");
+    redisTemplate.opsForValue().set("room:"+roomId+":option:feedback", "false");
+    redisTemplate.opsForValue().set("room:"+roomId+":option:slideUnlock", "true");
+    redisTemplate.opsForValue().set("room:"+roomId+":maxSlide", "1");
 
     final String joinUrl = joinBase + reserved.code();
     String qrB64;
@@ -252,7 +261,11 @@ public class RoomService {
   //방 퇴장
   public BaseResponse<LeaveRoomResponse> leaveRoom(String roomId, LeaveRoomRequest request){
     //slide 개수
-    int slides = pageService.countSlideKeys(roomId);
+    String totalpage = redisTemplate.opsForValue().get("room:" + roomId + ":totalPage");
+    if (totalpage == null) {
+      throw new CustomException(ReportErrorCode.TOTAL_PAGE_NULL);
+    }
+    int slides = Integer.parseInt(totalpage);
 
 
     //online Redis에서 해당 청중 삭제

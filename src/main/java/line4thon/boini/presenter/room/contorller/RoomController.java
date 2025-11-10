@@ -14,6 +14,7 @@ import line4thon.boini.global.common.exception.CustomException;
 import line4thon.boini.global.common.response.BaseResponse;
 import line4thon.boini.global.jwt.service.JwtService;
 import line4thon.boini.global.websocket.JwtHandshakeInterceptor;
+import line4thon.boini.presenter.aiReport.exception.ReportErrorCode;
 import line4thon.boini.presenter.page.service.PageService;
 import line4thon.boini.presenter.room.dto.response.CreateRoomResponse;
 import line4thon.boini.presenter.room.dto.response.TokenResponse;
@@ -110,7 +111,11 @@ public class RoomController {
     String key4 = "room:" + roomId + ":enterAudienceCount";
     redisTemplate.opsForValue().increment(key4);
 
-    int totalPages = pageService.countSlideKeys(roomId);
+    String totalpage = redisTemplate.opsForValue().get("room:" + roomId + ":totalPage");
+    if (totalpage == null) {
+      throw new CustomException(ReportErrorCode.TOTAL_PAGE_NULL);
+    }
+    int totalPages = Integer.parseInt(totalpage);
 
     String sessionStatus = roomService.getSessionStatus(roomId).name();
 

@@ -2,10 +2,13 @@ package line4thon.boini.presenter.aiReport.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import line4thon.boini.audience.feedback.exception.FeedbackErrorCode;
+import line4thon.boini.global.common.exception.CustomException;
 import line4thon.boini.presenter.aiReport.dto.response.MostReactionStickerResponse;
 import line4thon.boini.presenter.aiReport.dto.response.MostRevisitResponse;
 import line4thon.boini.presenter.aiReport.dto.response.ReportTopResponse;
 import line4thon.boini.presenter.aiReport.dto.response.RevisitResponse;
+import line4thon.boini.presenter.aiReport.exception.ReportErrorCode;
 import line4thon.boini.presenter.page.service.PageService;
 import line4thon.boini.presenter.room.entity.Report;
 import line4thon.boini.presenter.room.repository.ReportRepository;
@@ -153,7 +156,15 @@ public class AiReportService {
 
 
     public List<RevisitResponse> getRevisit(String roomId) {
-        int slides = pageService.countSlideKeys(roomId); // 전체 슬라이드 개수
+//        int slides = pageService.countSlideKeys(roomId); // 전체 슬라이드 개수
+
+        String totalpage = redisTemplate.opsForValue().get("room:" + roomId + ":totalPage");
+        if (totalpage == null) {
+            throw new CustomException(ReportErrorCode.TOTAL_PAGE_NULL);
+        }
+        int slides = Integer.parseInt(totalpage);
+
+
         List<RevisitResponse> revisitList = new ArrayList<>();
 
         for (int slide = 1; slide <= slides; slide++) { // 슬라이드 번호 1부터 시작 가정
@@ -228,7 +239,12 @@ public class AiReportService {
 
     public int getFocusSlide(String roomId) {
 
-        int slides = pageService.countSlideKeys(roomId); // 전체 슬라이드 개수
+        String totalpage = redisTemplate.opsForValue().get("room:" + roomId + ":totalPage");
+        if (totalpage == null) {
+            throw new CustomException(ReportErrorCode.TOTAL_PAGE_NULL);
+        }
+        int slides = Integer.parseInt(totalpage);
+
         int[] questionScores = new int[slides]; // index: 슬라이드 번호, 값: 점수
 
         List<Long> slidesWithMostQuestions = getSlidesWithMostQuestions(roomId);
