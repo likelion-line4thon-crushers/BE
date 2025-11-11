@@ -291,6 +291,12 @@ public class RoomService {
   //방에 대한 모든 정보 삭제
   public void closeRoom(String roomId) {
 
+    try {
+      setSessionStatus(roomId, SessionStatus.ended); // ← /topic/p/{roomId}/public 으로 SESSION_STATE(ended) 전송
+    } catch (Exception e) {
+      log.warn("ended 브로드캐스트 실패(삭제는 계속 진행): roomId={}, err={}", roomId, e.toString());
+    }
+
 //    String key = "room:" + roomId + ":presenterKeyHash";
 //    String presenterToken = redisTemplate.opsForValue().get(key);
 //
