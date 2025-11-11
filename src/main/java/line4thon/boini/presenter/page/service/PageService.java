@@ -59,11 +59,13 @@ public class PageService {
                 redisTemplate.opsForValue().set("room:" + sessionId + ":maxSlide",  msg.getChangedPage().toString());
                 String totalPage = redisTemplate.opsForValue().get("room:" + sessionId + ":totalPage");
                 String unlock = redisTemplate.opsForValue().get("room:" + sessionId + ":option:slideUnlock");
+                String presenterPage = redisTemplate.opsForValue().get("room:"+sessionId+":presenterPage");
 
                 UnlockResponse response = new UnlockResponse().builder()
                         .maxRevealedPage(msg.getChangedPage().toString())
                         .totalPages(totalPage)
                         .revealAllSlides(unlock)
+                        .presenterPage(presenterPage)
                         .build();
 
                 messagingTemplate.convertAndSend("/topic/presentation/" + sessionId + "/option/unlock", response);
