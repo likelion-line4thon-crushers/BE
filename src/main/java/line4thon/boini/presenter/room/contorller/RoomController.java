@@ -148,10 +148,10 @@ public class RoomController {
   @Operation(
           summary = "발표자 세션 완전 종료(AI리포트 페이지 종료)",
           description = """
-          `roomId`와 `발표자 JWT`로 세션을 종료시킵니다.
+          `roomId로 세션을 종료합니다. 종료 이벤트를 브로드캐스트한 뒤, 방 관련 Redis 키를 모두 삭제합니다.
           """
   )
-  public ResponseEntity closeRoom(@PathVariable("roomId") String roomId) {
+  public BaseResponse closeRoom(@PathVariable("roomId") String roomId) {
 
 //    String token = jwtHandshakeInterceptor.extractBearer(request.getHeader("Authorization"));
 //
@@ -168,7 +168,7 @@ public class RoomController {
 
     roomService.closeRoom(roomId);
 
-    return ResponseEntity.ok("방을 성공적으로 삭제하였습니다.");
+    return BaseResponse.success("방을 성공적으로 삭제하였습니다.");
   }
 
   // 발표자: 세션 시작
