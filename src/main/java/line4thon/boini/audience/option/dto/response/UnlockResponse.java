@@ -11,4 +11,5 @@ public class UnlockResponse {
     private String maxRevealedPage;
     private String revealAllSlides;
     private String totalPages;
+    private String presenterPage;
 }

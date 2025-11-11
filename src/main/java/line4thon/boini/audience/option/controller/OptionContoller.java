@@ -44,15 +44,17 @@ public class OptionContoller {
         redisTemplate.opsForValue().set("room:"+sessionId+":option:slideUnlock", unlock);
         String totalPage = redisTemplate.opsForValue().get("room:"+sessionId+":totalPage");
         String maxSlide = redisTemplate.opsForValue().get("room:"+sessionId+":maxSlide");
+        String presenterPage = redisTemplate.opsForValue().get("room:"+sessionId+":presenterPage");
 
         UnlockResponse msg = new UnlockResponse().builder()
                 .maxRevealedPage(maxSlide)
                 .revealAllSlides(unlock)
                 .totalPages(totalPage)
+                .presenterPage(presenterPage)
                 .build();
 
         messagingTemplate.convertAndSend("/topic/presentation/" + sessionId + "/option/unlock", msg);
-        log.info("페이지 잠금 옵션 수정 완료 : roomId={}, maxSlide={}, unlock={}, totalPage={}", sessionId, maxSlide, unlock, totalPage );
+        log.info("페이지 잠금 옵션 수정 완료 : roomId={}, maxSlide={}, unlock={}, totalPage={}, presenterPage={}", sessionId, maxSlide, unlock, totalPage, presenterPage );
 
         return BaseResponse.success("페이지 잠금 옵션이 성공적으로 변경되었습니다.", msg);
     }
