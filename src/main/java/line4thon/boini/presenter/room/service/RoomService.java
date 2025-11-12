@@ -338,29 +338,29 @@ public class RoomService {
 //    }
 
 
-    try{
-      //key 패턴
-      String pattern = "room:" + roomId + ":*";
-      String key2 = "room:" + roomId + ":code";
-      String code = redisTemplate.opsForValue().get(key2);
-      if (code == null) {
-        throw new CustomException(RoomErrorCode.CODE_INVALID);
-      }
-      String key3 = "code:" + code;
-
-      // Redis에서 해당 패턴에 매칭되는 모든 키 가져오기
-      Set<String> keys = redisTemplate.keys(pattern);
-      if (keys != null && !keys.isEmpty()) {
-        redisTemplate.delete(keys);
-        redisTemplate.delete(key3);
-//        objectRedisTemplate.delete(keys);
-        log.info("방 관련 키 전부 제거 완료 : roomId={}", roomId);
-      } else {
-        throw new CustomException(GlobalErrorCode.RESOURCE_NOT_FOUND);
-      }
-    } catch (Exception e) {
-      throw new CustomException(GlobalErrorCode.INTERNAL_SERVER_ERROR);
-    }
+//    try{
+//      //key 패턴
+//      String pattern = "room:" + roomId + ":*";
+//      String key2 = "room:" + roomId + ":code";
+//      String code = redisTemplate.opsForValue().get(key2);
+//      if (code == null) {
+//        throw new CustomException(RoomErrorCode.CODE_INVALID);
+//      }
+//      String key3 = "code:" + code;
+//
+//      // Redis에서 해당 패턴에 매칭되는 모든 키 가져오기
+//      Set<String> keys = redisTemplate.keys(pattern);
+//      if (keys != null && !keys.isEmpty()) {
+//        redisTemplate.delete(keys);
+//        redisTemplate.delete(key3);
+////        objectRedisTemplate.delete(keys);
+//        log.info("방 관련 키 전부 제거 완료 : roomId={}", roomId);
+//      } else {
+//        throw new CustomException(GlobalErrorCode.RESOURCE_NOT_FOUND);
+//      }
+//    } catch (Exception e) {
+//      throw new CustomException(GlobalErrorCode.INTERNAL_SERVER_ERROR);
+//    }
 
 
 
