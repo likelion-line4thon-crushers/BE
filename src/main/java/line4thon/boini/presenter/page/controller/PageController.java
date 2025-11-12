@@ -57,6 +57,9 @@ public class PageController {
         // Redis 관리
         pageService.updateAudiencePage(sessionId, msg);
 
+        SlideAudienceCountResponse audienceCountResponse = pageService.getSlideAudienceCounts(sessionId);
+        messagingTemplate.convertAndSend("/topic/presentation/" + sessionId + "/audience-slide-stats", audienceCountResponse);
+
         return BaseResponse.success("페이지가 성공적으로 변경되었습니다.", new ChangeAudiencePageResponse(
                 msg.getAudienceId(),
                 msg.getBeforePage(),
