@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 import java.util.Map;
 
 import io.jsonwebtoken.Claims;
+import line4thon.boini.audience.liveFeedback.service.LiveFeedbackService;
 import line4thon.boini.audience.room.dto.request.LeaveRoomRequest;
 import line4thon.boini.audience.room.dto.response.JoinResponse;
 import line4thon.boini.audience.room.dto.response.LeaveRoomResponse;
@@ -49,6 +50,7 @@ public class RoomService {
   private final AudienceAuthService audienceAuthService;
   private final S3Client s3Client;
   private final JwtService jwtService;
+  private final LiveFeedbackService liveFeedbackService;
 
 
   @Autowired
@@ -125,6 +127,8 @@ public class RoomService {
     redisTemplate.opsForValue().set("room:"+roomId+":option:feedback", "false");
     redisTemplate.opsForValue().set("room:"+roomId+":option:slideUnlock", "true");
     redisTemplate.opsForValue().set("room:"+roomId+":maxSlide", "1");
+
+    liveFeedbackService.initFeedbackHashes(roomId, request.getTotalPages());
 
     final String joinUrl = joinBase + reserved.code();
     String qrB64;
