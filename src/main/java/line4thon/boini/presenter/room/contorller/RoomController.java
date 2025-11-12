@@ -1,6 +1,5 @@
 package line4thon.boini.presenter.room.contorller;
 
-import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,13 +23,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import line4thon.boini.presenter.room.dto.request.CreateRoomRequest;
 import line4thon.boini.presenter.room.dto.request.RefreshPresenterTokenRequest;
 import line4thon.boini.presenter.room.service.PresenterAuthService;
-import line4thon.boini.global.jwt.exception.JwtErrorCode;
 import line4thon.boini.presenter.room.service.RoomService;
 
 import java.util.Map;
@@ -49,6 +47,7 @@ public class RoomController {
   private final PageService pageService;
   private final JwtHandshakeInterceptor jwtHandshakeInterceptor;
   private final JwtService jwtService;
+  private final SimpMessagingTemplate messagingTemplate;
 
   @Autowired
   private RedisTemplate<String, String> redisTemplate;
@@ -117,7 +116,21 @@ public class RoomController {
     }
     int totalPages = Integer.parseInt(totalpage);
 
+    String maxPage = redisTemplate.opsForValue().get("room:" + roomId + ":maxSlide");
+    String sticker = redisTemplate.opsForValue().get("room:" + roomId + ":option:sticker");
+    String question = redisTemplate.opsForValue().get("room:" + roomId + ":option:question");
+    String feedback = redisTemplate.opsForValue().get("room:" + roomId + ":option:feedback");
+    String slideUnlock = redisTemplate.opsForValue().get("room:" + roomId + ":option:slideUnlock");
+
     String sessionStatus = roomService.getSessionStatus(roomId).name();
+
+    Long audienceCountL = redisTemplate.opsForSet().size(key);
+    if (audienceCountL==null) {
+      audienceCountL=0L;
+    }
+
+    int audienceCount = audienceCountL.intValue();
+    messagingTemplate.convertAndSend("/topic/presentation/" + roomId + "/audienceCount", audienceCount);
 
     return BaseResponse.success(new JoinResponse(
         roomId,
@@ -127,7 +140,12 @@ public class RoomController {
         deckId,
         totalPages,
         presenterPage,
-        sessionStatus
+        sessionStatus,
+        maxPage,
+        sticker,
+        question,
+        feedback,
+        slideUnlock
     ));
   }
 
@@ -140,7 +158,22 @@ public class RoomController {
           """
   )
   public BaseResponse<LeaveRoomResponse> leaveRoom(@PathVariable("roomId") String roomId, @RequestBody LeaveRoomRequest request) {
-    return roomService.leaveRoom(roomId, request);
+
+
+    BaseResponse<LeaveRoomResponse> res = roomService.leaveRoom(roomId, request);
+
+    String key = "room:" + roomId + ":audience:online";
+    Long audienceCountL = redisTemplate.opsForSet().size(key);
+
+    if (audienceCountL==null) {
+      audienceCountL=0L;
+    }
+
+    int audienceCount = audienceCountL.intValue();
+
+    messagingTemplate.convertAndSend("/topic/presentation/" + roomId + "/audienceCount", audienceCount);
+    return res;
+
   }
 
   // 발표자 : 세션 종료(+ AI 리포트 + Redis 청소)

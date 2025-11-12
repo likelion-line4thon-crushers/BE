@@ -14,4 +14,9 @@ public class JoinResponse {
   private final Integer totalPages;
   private final String currentPage;
   private final String sessionStatus;
+  private final String maxPage;
+  private final String sticker;
+  private final String question;
+  private final String feedback;
+  private final String slideUnlock;
 }
