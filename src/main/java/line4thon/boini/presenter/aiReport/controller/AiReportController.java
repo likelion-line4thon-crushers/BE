@@ -60,8 +60,15 @@ public class AiReportController {
 
         // 2️⃣ 존재할 때만 popularEmoji 값 변경
         optionalReport.ifPresent(report -> {
-            report.setPopularEmoji(list.toString());
-            reportRepository.save(report); // JPA가 더티체킹으로 자동 업데이트함
+            try {
+                ObjectMapper mapper = new ObjectMapper();
+                // list를 JSON 문자열로 변환
+                String json = mapper.writeValueAsString(list);
+                report.setPopularEmoji(json);
+                reportRepository.save(report); // JPA가 더티체킹으로 자동 업데이트
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         });
 
         return BaseResponse.success(list);
