@@ -38,10 +38,8 @@ public class PageController {
     private final RedisTemplate<String, String> redisTemplate;
     private final PageService pageService;
 
-    // 발표자가 페이지를 바꿀 때 (클라이언트 -> /app/presentation/{uuid}/pageChange/presenter)
     @MessageMapping("/presentation/{sessionId}/pageChange/presenter")
     public BaseResponse handlePageChangePresenter(@DestinationVariable String sessionId, ChangePageRequest msg) {
-        // Redis 관리
         pageService.updateCurrentPage(sessionId, msg);
 
         return BaseResponse.success("페이지가 성공적으로 변경되었습니다.", new ChangePageResponse(
@@ -54,7 +52,6 @@ public class PageController {
     @MessageMapping("/presentation/{sessionId}/pageChange/audience")
     public BaseResponse handlePageChangeAudience(@DestinationVariable String sessionId, ChangeAudiencePageRequest msg) {
 
-        // Redis 관리
         pageService.updateAudiencePage(sessionId, msg);
 
         SlideAudienceCountResponse audienceCountResponse = pageService.getSlideAudienceCounts(sessionId);

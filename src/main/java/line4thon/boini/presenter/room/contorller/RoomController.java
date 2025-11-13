@@ -52,7 +52,6 @@ public class RoomController {
   @Autowired
   private RedisTemplate<String, String> redisTemplate;
 
-  // 발표자: 방 생성
   @PostMapping
   @Operation(
       summary = "발표자 방 생성",
@@ -64,7 +63,6 @@ public class RoomController {
     return BaseResponse.success(response);
   }
 
-  // 발표자: 토큰 재발급
   @PostMapping("/{roomId}/presenter-token:refresh")
   @Operation(
       summary = "발표자 토큰 재발급",
@@ -79,7 +77,6 @@ public class RoomController {
     return BaseResponse.success(new TokenResponse(newToken));
   }
 
-  // 청중: 방 입장
   @GetMapping("/join/{code}")
   @Operation(
       summary = "청중 방 입장",
@@ -89,18 +86,15 @@ public class RoomController {
           """
   )
   public BaseResponse<JoinResponse> joinByPath(@PathVariable("code") String code) {
-    // code -> roomId 확인 (CONFIRMED만 허용)
     String roomId = codeService.resolveRoomIdByCodeOrThrow(code);
     var issued = audienceAuth.issueAudienceToken(roomId);
 
     String key5 = "room:" + roomId + ":presenterPage";
     String presenterPage = redisTemplate.opsForValue().get(key5);
 
-    //Redis에 유저ID 추가
     String key = "room:" + roomId + ":audience:online";
     redisTemplate.opsForSet().add(key, issued.audienceId());
 
-    //Redis에 유저 슬라이드1에 추가
     String key2 = "room:" + roomId + ":slide:" + presenterPage;
     redisTemplate.opsForSet().add(key2, issued.audienceId());
 
@@ -149,7 +143,6 @@ public class RoomController {
     ));
   }
 
-  // 청중: 방 퇴장
   @PostMapping("/leave/{roomId}")
   @Operation(
           summary = "청중 방 퇴장",
@@ -176,7 +169,6 @@ public class RoomController {
 
   }
 
-  // 발표자 : 세션 종료(+ AI 리포트 + Redis 청소)
   @DeleteMapping("/close/{roomId}")
   @Operation(
           summary = "발표자 세션 완전 종료(AI리포트 페이지 종료)",
@@ -186,25 +178,11 @@ public class RoomController {
   )
   public BaseResponse closeRoom(@PathVariable("roomId") String roomId) {
 
-//    String token = jwtHandshakeInterceptor.extractBearer(request.getHeader("Authorization"));
-//
-//    if (token == null)
-//      throw new CustomException(JwtErrorCode.JWT_INVALID);
-
-    //발표자 JWT 검증 삭제
-//    String token = null;
-//    if (authHeader != null && authHeader.startsWith("Bearer ")) {
-//      token = authHeader.substring(7); // "Bearer " 잘라내기
-//    }
-//
-//    System.out.println("token: " + token);
-
     roomService.closeRoom(roomId);
 
     return BaseResponse.success("방을 성공적으로 삭제하였습니다.");
   }
 
-  // 발표자 : 세션 종료(+ AI 리포트 + Redis 청소)
   @GetMapping("/onlineAudience/{roomId}")
   @Operation(
           summary = "현재 청중 수 반환",
@@ -219,7 +197,6 @@ public class RoomController {
     return redisTemplate.opsForSet().size(key);
   }
 
-  // 발표자: 세션 시작
   @PostMapping("/{roomId}/session/start")
   @Operation(
       summary = "세션 시작",

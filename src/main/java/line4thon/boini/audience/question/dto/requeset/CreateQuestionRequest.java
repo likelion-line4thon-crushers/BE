@@ -6,5 +6,5 @@ public record CreateQuestionRequest(
     @NotBlank String audienceId,
     @NotNull Integer slide,
     @NotBlank @Size(max = 500) String content,
-    Long ts // optional client timestamp(ms)
+    Long ts
 ) {}

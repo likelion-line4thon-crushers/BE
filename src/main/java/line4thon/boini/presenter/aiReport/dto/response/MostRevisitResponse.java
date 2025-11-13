@@ -8,9 +8,9 @@ import lombok.*;
 @AllArgsConstructor
 @Builder
 public class MostRevisitResponse {
-    private int slide;              // 슬라이드 번호
-    private int totalRevisits;      // 총 재방문 수
+    private int slide;
+    private int totalRevisits;
     private int totalAudienceCount;
-    private int uniqueUsers;        // 재방문한 사용자 수
-    private int multiRevisitUsers;  // 2번 이상 다시 본 사용자 수
+    private int uniqueUsers;
+    private int multiRevisitUsers;
 }

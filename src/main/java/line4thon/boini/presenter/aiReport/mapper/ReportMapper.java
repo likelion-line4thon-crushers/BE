@@ -17,7 +17,6 @@ public final class ReportMapper {
     try {
       return OM.readTree(json);
     } catch (Exception e) {
-      // 파싱 실패 시 null 대신 빈 노드 반환(프론트 안정성↑)
       return NullNode.getInstance();
     }
   }

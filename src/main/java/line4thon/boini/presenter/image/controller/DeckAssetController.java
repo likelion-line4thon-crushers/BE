@@ -23,7 +23,6 @@ public class DeckAssetController {
 
   private final DeckAssetService deckAssets;
 
-  // 표준 엔드포인트: 쿼리스트링으로 확장자 받기 + page는 숫자만 매칭
   @GetMapping("/{roomId}/{deckId}/pages/{page:\\d+}")
   @Operation(
       summary = "원본 이미지 Presigned URL 발급",
@@ -40,11 +39,10 @@ public class DeckAssetController {
       @RequestParam(defaultValue = "png")
       @Pattern(regexp = "png|jpg|jpeg|webp") String ext
   ) {
-    var res = deckAssets.getOriginalUrl(roomId, deckId, page, ext); // [수정] public API만 호출
+    var res = deckAssets.getOriginalUrl(roomId, deckId, page, ext);
     return BaseResponse.success(res);
   }
 
-  // 레거시/직관적 경로 지원: /pages/2.png 같은 호출 처리
   @GetMapping("/{roomId}/{deckId}/pages/{page:\\d+}.{ext}")
   @Operation(hidden = true)
   public BaseResponse<OriginalUrlResponse> getOriginalWithExtInPath(
@@ -53,7 +51,7 @@ public class DeckAssetController {
       @PathVariable @Min(1) int page,
       @PathVariable @Pattern(regexp = "png|jpg|jpeg|webp") String ext
   ) {
-    return BaseResponse.success(deckAssets.getOriginalUrl(roomId, deckId, page, ext)); // [수정]
+    return BaseResponse.success(deckAssets.getOriginalUrl(roomId, deckId, page, ext));
   }
 
   @PostMapping(value = "/{roomId}/{deckId}/pages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

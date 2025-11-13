@@ -42,17 +42,15 @@ public class AiReportService {
         log.info("=== getMostReactionSticker 시작 ===");
         log.info("Redis Stream Key: {}", key);
 
-        // 1) Stream 전체 조회
         List<MapRecord<String, Object, Object>> records =
                 objectRedisTemplate.opsForStream().range(key, Range.unbounded());
 
         log.info("조회된 Stream 레코드 개수: {}", records.size());
 
-        // emoji → slide → count
         Map<Integer, Map<Integer, Long>> countMap = new HashMap<>();
 
         for (MapRecord<String, Object, Object> record : records) {
-            log.info("Raw record value: {}", record.getValue());  // 실제 Redis에서 가져온 값 확인
+            log.info("Raw record value: {}", record.getValue());
 
             Map<String, Object> value = objectMapper.convertValue(record.getValue(), new TypeReference<>() {
             });
@@ -108,7 +106,6 @@ public class AiReportService {
 
         List<RevisitResponse> revisitList = getRevisit(roomId);
 
-        // 가장 많이 재방문된 슬라이드 찾기
         RevisitResponse most = revisitList.stream()
                 .max(Comparator.comparingInt(RevisitResponse::getRevisits))
                 .orElse(new RevisitResponse(0, 0));
@@ -117,10 +114,8 @@ public class AiReportService {
 
         String usersKey = "room:" + roomId + ":revisit:users:" + slide;
 
-        // 재방문한 사용자 수
         Long uniqueUsers = redisTemplate.opsForSet().size(usersKey);
 
-        // 2번 이상 재방문한 사용자 수 계산
         int multiRevisitUsers = 0;
         Set<String> users = redisTemplate.opsForSet().members(usersKey);
         if (users != null) {
@@ -132,9 +127,6 @@ public class AiReportService {
                 }
             }
         }
-
-//        String key4 = "room:" + roomId + ":enterAudienceCount";
-//        int totalAudienceCount = Integer.parseInt(redisTemplate.opsForValue().get(key4));
 
         String key4 = "room:" + roomId + ":enterAudienceCount";
         String countStr = redisTemplate.opsForValue().get(key4);
@@ -156,7 +148,6 @@ public class AiReportService {
 
 
     public List<RevisitResponse> getRevisit(String roomId) {
-//        int slides = pageService.countSlideKeys(roomId); // 전체 슬라이드 개수
 
         String totalpage = redisTemplate.opsForValue().get("room:" + roomId + ":totalPage");
         if (totalpage == null) {
@@ -167,13 +158,11 @@ public class AiReportService {
 
         List<RevisitResponse> revisitList = new ArrayList<>();
 
-        for (int slide = 1; slide <= slides; slide++) { // 슬라이드 번호 1부터 시작 가정
+        for (int slide = 1; slide <= slides; slide++) {
             String key = "room:" + roomId + ":revisit:" + slide;
 
-            // Redis에서 revisit 값 가져오기
             String revisitStr = redisTemplate.opsForValue().get(key);
 
-            // 값이 없으면 0으로 처리
             int revisits = (revisitStr != null) ? Integer.parseInt(revisitStr) : 0;
 
             revisitList.add(RevisitResponse.builder()
@@ -187,7 +176,6 @@ public class AiReportService {
 
     public ReportTopResponse getReportTop(String roomId) {
 
-        // 1️⃣ roomId로 Report 조회
         Optional<Report> optionalReport = reportRepository.findByRoomId(roomId);
 
         String key1 = "room:" + roomId + ":stickers";
@@ -201,21 +189,11 @@ public class AiReportService {
 
         Long focusSlide = Long.valueOf(getFocusSlide(roomId));
 
-
-
-//        // 2️⃣ 존재할 때만 값 변경
-//        optionalReport.ifPresent(report -> {
-//            report.setEmojiCount(Integer.parseInt(String.valueOf(emoji)));
-//            report.setQuestionCount(Integer.parseInt(question));
-//            report.setAttentionSlide(Integer.parseInt(String.valueOf(focusSlide)));
-//            reportRepository.save(report); // JPA가 더티체킹으로 자동 업데이트함
-//        });
-
         optionalReport.ifPresent(report -> {
             report.setEmojiCount(safeParse(emoji, 0));
             report.setQuestionCount(safeParse(question, 0));
             report.setAttentionSlide(safeParse(focusSlide, 0));
-            reportRepository.save(report); // JPA가 더티체킹으로 자동 업데이트함
+            reportRepository.save(report);
         });
 
         return ReportTopResponse.builder()
@@ -245,11 +223,10 @@ public class AiReportService {
         }
         int slides = Integer.parseInt(totalpage);
 
-        int[] questionScores = new int[slides]; // index: 슬라이드 번호, 값: 점수
+        int[] questionScores = new int[slides];
 
         List<Long> slidesWithMostQuestions = getSlidesWithMostQuestions(roomId);
 
-        // 최다 질문 점수 +5
         for (Long slideNum : slidesWithMostQuestions) {
             if (slideNum > 0 && slideNum <= slides) {
                 questionScores[slideNum.intValue() - 1] += 5;
@@ -260,21 +237,18 @@ public class AiReportService {
 
         List<RevisitResponse> revisitList = getRevisit(roomId);
 
-// 1) 가장 많이 재방문한 횟수
         int maxRevisits = revisitList.stream()
                 .mapToInt(RevisitResponse::getRevisits)
                 .max()
                 .orElse(0);
 
-        if (maxRevisits > 0) { // maxRevisits가 0보다 클 때만 점수 적용
-            // 2) maxRevisits 가진 슬라이드 모두 리스트로 추출
+        if (maxRevisits > 0) {
             List<Integer> mostRevisitedSlides = revisitList.stream()
                     .filter(r -> r.getRevisits() == maxRevisits)
                     .map(RevisitResponse::getSlide)
                     .sorted()
                     .toList();
 
-            // 최다 방문 점수 +4
             for (Integer slideNum : mostRevisitedSlides) {
                 if (slideNum > 0 && slideNum <= slides) {
                     questionScores[slideNum - 1] += 4;
@@ -287,7 +261,6 @@ public class AiReportService {
 
         List<Integer> mostReactionSlides = findMostReactionSlides(roomId);
 
-        // 최다 이모지 점수 +3
         for (Integer slideNum : mostReactionSlides) {
             if (slideNum > 0 && slideNum <= slides) {
                 questionScores[slideNum - 1] += 3;
@@ -304,10 +277,9 @@ public class AiReportService {
             }
         }
 
-        return maxIndex + 1; // 0-based index 보정
+        return maxIndex + 1;
     }
 
-    // 가장 질문 수 많은 슬라이드 반환 (안전하게 수정)
     public List<Long> getSlidesWithMostQuestions(String roomId) {
         String pattern = "room:%s:page:*:questions".formatted(roomId);
 
@@ -322,7 +294,7 @@ public class AiReportService {
             String[] parts = key.split(":");
             if (parts.length < 4) {
                 log.warn("Unexpected key format: {}", key);
-                continue; // 형식이 맞지 않으면 건너뜀
+                continue;
             }
 
             try {
@@ -346,7 +318,6 @@ public class AiReportService {
                 .toList();
     }
 
-    // 최다 이모지 슬라이드 리스트
     public List<Integer> findMostReactionSlides(String roomId) {
 
         String key = "room:" + roomId + ":stickers";

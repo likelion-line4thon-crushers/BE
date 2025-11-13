@@ -23,9 +23,6 @@ public class StickerLoadController {
 
     private final RedisTemplate<String, Object> objectRedisTemplate;
 
-    /**
-     * 특정 세션의 모든 스티커 조회
-     */
     @Operation(
             summary = "발표자용 - 새로고침 시 리액션 스티커들을 전부 가져오는 api",
             description = """
@@ -36,11 +33,9 @@ public class StickerLoadController {
     public List<StickerLoadResponse> getAllStickers(@PathVariable String sessionId) {
         String key = "room:" + sessionId + ":stickers";
 
-        // Redis Stream 전체 조회
         List<MapRecord<String, Object, Object>> records =
                 objectRedisTemplate.opsForStream().range(key, Range.unbounded());
 
-        // Redis 데이터 → DTO 변환
         return Objects.requireNonNull(records).stream()
                 .map(record -> {
                     Map<Object, Object> fields = record.getValue();
@@ -54,9 +49,6 @@ public class StickerLoadController {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 특정 audienceId의 스티커만 조회
-     */
     @Operation(
             summary = "청중용 - 새로고침 시 자신이 붙였던 리액션 스티커들을 전부 가져오는 api",
             description = """
@@ -70,11 +62,9 @@ public class StickerLoadController {
 
         String key = "room:" + sessionId + ":stickers";
 
-        // Redis Stream 전체 조회
         List<MapRecord<String, Object, Object>> records =
                 objectRedisTemplate.opsForStream().range(key, Range.unbounded());
 
-        // audienceId로 필터링
         return Objects.requireNonNull(records).stream()
                 .map(MapRecord::getValue)
                 .filter(fields -> audienceId.equals(fields.get("audienceId")))

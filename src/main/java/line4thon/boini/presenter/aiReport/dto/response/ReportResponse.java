@@ -13,7 +13,7 @@ public class ReportResponse {
   private Integer questionCount;
   private Integer attentionSlide;
 
-  private JsonNode top3Question;    // 문자열 → JSON 파싱
+  private JsonNode top3Question;
   private JsonNode popularEmoji;
   private JsonNode popularQuestion;
   private JsonNode revisit;

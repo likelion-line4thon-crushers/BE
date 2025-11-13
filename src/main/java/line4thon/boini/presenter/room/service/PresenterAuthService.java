@@ -25,7 +25,6 @@ public class PresenterAuthService {
   private final JwtService jwt;
   private final AppProperties props;
 
-  // 발표자 재발급 키(원문) 생성 & 해시를 Redis에 저장. (원문은 응답으로만 반환; 서버에 평문 저장 X)
   public String generateAndStorePresenterKey(String roomId) {
     String key = generatePresenterKey();
     String hash = sha256Hex(key);
@@ -40,7 +39,6 @@ public class PresenterAuthService {
     return key;
   }
 
-  // presenterKey 검증 (제공받은 원문을 해시해 비교)
   public boolean verifyPresenterKey(String roomId, String providedKey) {
     validateRoomId(roomId);
     if (providedKey == null || providedKey.isBlank()) {
@@ -68,7 +66,6 @@ public class PresenterAuthService {
     return match;
   }
 
-  // 발표자용 JWT 발급 (role=presenter).
   public String issuePresenterToken(String roomId) {
     validateRoomId(roomId);
     long hours = props.getJwt().getPresenterTtlHours();
@@ -82,15 +79,11 @@ public class PresenterAuthService {
     }
   }
 
-  // presenterKey 검증 후 발표자 JWT 재발급. 실패 시 UNAUTHORIZED.
   public String refreshPresenterToken(String roomId, String presenterKey) {
-    // 하위호환 유지: 내부적으로 회전 없이 재발급만 수행하도록 신규 메서드 위임
     RefreshResult res = refreshTokenAndMaybeRotate(roomId, presenterKey, false);
     return res.token();
   }
 
-  // presenterKey 검증 후, (옵션) 키 회전까지 수행하고 토큰을 반환
-  // rotate=true 이면 새 presenterKey도 함께 반환된다.
   public RefreshResult refreshTokenAndMaybeRotate(String roomId, String presenterKey, boolean rotate) {
     if (!verifyPresenterKey(roomId, presenterKey)) {
       throw new CustomException(GlobalErrorCode.UNAUTHORIZED);
@@ -109,7 +102,6 @@ public class PresenterAuthService {
     return new RefreshResult(token, rotated);
   }
 
-  // 재발급 성공 시 키 회전: 새 키를 발급하고 해시를 교체하여 보안 강화
   public String rotatePresenterKey(String roomId) {
     String newKey  = generatePresenterKey();
     String newHash = sha256Hex(newKey);
@@ -119,22 +111,17 @@ public class PresenterAuthService {
     return newKey;
   }
 
-  // 토큰 + (선택적) 회전된 presenterKey를 담는 응답 레코드
   public record RefreshResult(String token, String rotatedPresenterKey) {}
 
-  // Redis 키 이름 생성 (room:<roomId>:presenterKeyHash)
   private String presenterKeyHashKey(String roomId) {
     return "room:" + roomId + ":presenterKeyHash";
   }
 
-  // 충분히 긴 랜덤 키(원문).
   private String generatePresenterKey() {
-    // UUID 2개를 붙여 64 hex 길이(하이픈 제거). 필요하면 더 길게 해도 OK.
     return UUID.randomUUID().toString().replace("-", "")
         + UUID.randomUUID().toString().replace("-", "");
   }
 
-  // SHA-256 해시(hex 문자열)
   private String sha256Hex(String s) {
     try {
       MessageDigest md = MessageDigest.getInstance("SHA-256");
@@ -147,7 +134,6 @@ public class PresenterAuthService {
     }
   }
 
-  // 타이밍 공격 완화용 상수시간 비교
   private boolean slowEquals(String a, String b) {
     if (a == null || b == null) return false;
     int r = 0, n = Math.max(a.length(), b.length());
