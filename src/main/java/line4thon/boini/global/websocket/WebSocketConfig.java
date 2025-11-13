@@ -23,6 +23,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             "http://localhost:*",
             "https://line4thon-boini.netlify.app",
             "https://api.boini.shop",
+            "https://boini.kr",
             "*"
         )
         .withSockJS();
@@ -33,6 +34,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             "http://localhost:*",
             "https://line4thon-boini.netlify.app",
             "https://api.boini.shop",
+            "https://boini.kr",
             "*"
         )
         .withSockJS();
