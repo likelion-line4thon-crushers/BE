@@ -218,4 +218,22 @@ public class RoomController {
 
     return redisTemplate.opsForSet().size(key);
   }
+
+  // 발표자: 세션 시작
+  @PostMapping("/{roomId}/session/start")
+  @Operation(
+      summary = "세션 시작",
+      description = """
+        발표자가 세션을 시작합니다.  
+        세션 상태가 `waiting` → `live`로 전환되고,  
+        모든 청중에게 WebSocket 브로드캐스트로 알림이 전송됩니다.
+        """
+  )
+  public BaseResponse<Map<String, String>> startSession(@PathVariable String roomId) {
+    roomService.setSessionStatus(roomId, SessionStatus.live);
+    return BaseResponse.success(Map.of(
+        "roomId", roomId,
+        "status", "live"
+    ));
+  }
 }
