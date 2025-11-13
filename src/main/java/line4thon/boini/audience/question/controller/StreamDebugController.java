@@ -32,7 +32,6 @@ public class StreamDebugController {
   ) {
     String streamKey = "stream:question:events:" + roomId;
 
-    // Range<String> 로 지정해야 함
     Range<String> range = Range.closed("0-0", "+");
     var list = redis.opsForStream().range(streamKey, range);
 

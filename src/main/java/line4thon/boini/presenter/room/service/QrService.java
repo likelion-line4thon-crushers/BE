@@ -25,12 +25,10 @@ public class QrService {
     }
 
     try {
-      // QR 코드 생성
       BitMatrix matrix = new MultiFormatWriter()
           .encode(url, BarcodeFormat.QR_CODE, 512, 512);
       var img = MatrixToImageWriter.toBufferedImage(matrix);
 
-      // 이미지 → Base64 변환
       var baos = new ByteArrayOutputStream();
       ImageIO.write(img, "png", baos);
       String encoded = Base64.getEncoder().encodeToString(baos.toByteArray());

@@ -23,16 +23,11 @@ public class QuestionController {
 
   private final QuestionService questionService;
 
-  /**
-   * WebSocket(STOMP) - 질문 생성
-   * 클라이언트: SEND /app/p/{roomId}/question.create  (payload = CreateQuestionRequest)
-   * 구독: /topic/p/{roomId}/public , /topic/p/{roomId}/presenter
-   */
   @MessageMapping("/p/{roomId}/question.create")
   @Operation(summary = "질문 생성 (WebSocket)", description = "STOMP를 통해 실시간 질문을 생성합니다.")
   public void createViaWs(@DestinationVariable String roomId,
       @Valid @Payload CreateQuestionRequest request) {
-    // 저장 + 실시간 브로드캐스트는 Service 가 처리
+
     questionService.create(roomId, request);
   }
 
@@ -44,7 +39,7 @@ public class QuestionController {
   public BaseResponse<List<CreateQuestionResponse>> listRoom(
       @PathVariable String roomId,
       @RequestParam(required = false) Long fromTs,
-      @RequestParam(required = false) Integer slide // ← 선택 필터
+      @RequestParam(required = false) Integer slide
   ) {
     var list = questionService.listRoom(roomId, fromTs, slide);
     return BaseResponse.success("질문 목록을 성공적으로 조회했습니다.", list);

@@ -8,5 +8,5 @@ import lombok.*;
 @AllArgsConstructor
 
 public class RefreshPresenterTokenRequest {
-  private String presenterKey;  // 방 생성 시 받은 키 (원문)
+  private String presenterKey;
 }

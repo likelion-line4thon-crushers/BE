@@ -9,8 +9,8 @@ import java.time.Instant;
 @AllArgsConstructor
 @Builder
 public class Room {
-  private String id;          // UUID
-  private String code;        // 6자리 코드
+  private String id;
+  private String code;
   private Integer count;
   private RoomOptions options;
   private Instant createdAt;

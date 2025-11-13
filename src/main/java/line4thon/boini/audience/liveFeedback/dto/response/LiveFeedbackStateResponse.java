@@ -4,7 +4,6 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-// 피드백 상태 모델
 @Data
 @AllArgsConstructor
 @NoArgsConstructor

@@ -17,9 +17,8 @@ public class AudienceAuthService {
   private static final String ROLE_AUDIENCE = "audience";
 
   private final JwtService jwtService;
-  private final AppProperties props; // TTL 설정 주입
+  private final AppProperties props;
 
-  // 청중 토큰 발급
   public IssuedAudience issueAudienceToken(String roomId) {
     try {
       String audienceId = UUID.randomUUID().toString();

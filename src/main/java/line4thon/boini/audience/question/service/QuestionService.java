@@ -27,9 +27,8 @@ public class QuestionService {
   private static final long STREAM_MAXLEN = 10_000L;
   private final RedisTemplate<String, String> redisTemplate;
 
-  // 질문 생성 → 저장 → 실시간 브로드캐스트
   public CreateQuestionResponse create(String roomId, CreateQuestionRequest request) {
-    // 5초 10회 제한 같은 간단 레이트리밋
+
     rateLimit(roomId, request.audienceId());
 
     String id = genId();
@@ -50,7 +49,6 @@ public class QuestionService {
     h.put("content", request.content());
     h.put("ts", String.valueOf(ts));
 
-    // 1) Redis 저장 (본문: HASH, 인덱스: ZSET(score=ts))
     try {
       redis.opsForHash().putAll(hKey, h);
       redis.opsForZSet().add(zKey, id, ts);
@@ -62,7 +60,6 @@ public class QuestionService {
       throw new CustomException(AudienceQuestionErrorCode.REDIS_ERROR);
     }
 
-    // 2) 브로드캐스트 (방의 모두에게)
     var response = new CreateQuestionResponse(id, roomId, request.slide(), request.audienceId(), request.content(), ts);
     String base = "/topic/p/" + roomId;
     broker.convertAndSend(base + "/public",    QuestionEvent.created(response));     // 청중/발표자 공통
@@ -70,8 +67,6 @@ public class QuestionService {
 
     log.info("[WS] 질문 실시간 전송 완료 (roomId={}, audienceId={}, slide={}, content='{}')",
         roomId, request.audienceId(), request.slide(), request.content());
-
-    // Redis Stream 발행 → 분석/알림 파이프라인 용
 
     try {
       Map<String, String> streamBody = Map.of(
@@ -94,22 +89,17 @@ public class QuestionService {
     return response;
   }
 
-  // 전체 질문 조회용: 방 단위 시간 오름차순 전체 반환
+
   public List<CreateQuestionResponse> listRoom(String roomId, Long fromTs, Integer slide) {
-    // room-wide ZSET: 질문 생성시 함께 적재되어 있어야 함 (member = questionId, score = ts)
     final String zRoom = "room:%s:questions".formatted(roomId);
 
-    // fromTs 중복 방지: 배타 하한(> fromTs)로 처리
-    // Double 점수 특성상 Math.nextUp 사용 (fromTs가 있을 때만)
     final double min = (fromTs == null) ? Double.NEGATIVE_INFINITY : Math.nextUp(fromTs.doubleValue());
     final double max = Double.POSITIVE_INFINITY;
 
-    // slide 필터가 없으면 room-wide 인덱스로, 있으면 슬라이드 인덱스로 바로 당겨오는 게 효율적
     final String zKey = (slide == null)
         ? zRoom
         : "room:%s:page:%d:questions".formatted(roomId, slide);
 
-    // limit 제거: 전체 범위 조회
     Set<ZSetOperations.TypedTuple<String>> tuples =
         redis.opsForZSet().rangeByScoreWithScores(zKey, min, max);
 
@@ -118,7 +108,6 @@ public class QuestionService {
       return List.of();
     }
 
-    // HASH에서 본문 조립
     List<CreateQuestionResponse> result = new ArrayList<>(tuples.size());
     for (ZSetOperations.TypedTuple<String> t : tuples) {
       String qid = t.getValue();
@@ -130,9 +119,7 @@ public class QuestionService {
 
       int s = Integer.parseInt((String) h.get("slide"));
 
-      // slide 필터가 있는 경우, room-wide에서 가져왔을 때 추가 필터링
       if (slide != null && !zKey.endsWith(":questions")) {
-        // 이미 슬라이드 인덱스를 썼으므로 추가 필터 불필요
       } else if (slide != null && s != slide) {
         continue;
       }
@@ -148,7 +135,6 @@ public class QuestionService {
       ));
     }
 
-    // 오름차순(시간↑) 정렬 보장
     result.sort(Comparator.comparingLong(CreateQuestionResponse::ts));
     return result;
   }
@@ -157,7 +143,6 @@ public class QuestionService {
     return Long.toString(Instant.now().toEpochMilli(), 36) + "-" + UUID.randomUUID().toString().substring(0, 8);
   }
 
-  // 레이트리밋
     private void rateLimit(String roomId, String audienceId) {
         String key = "rate:%s:%s:q".formatted(roomId, audienceId);
         Long n = redis.opsForValue().increment(key);

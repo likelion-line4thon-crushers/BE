@@ -36,25 +36,13 @@ public class DeckAssetService {
   private final S3Presigner presigner;
   private final AppProperties props;
 
-  /**
-   * 컨트롤러가 호출하는 공개 API.
-   * - 특정 페이지의 원본 이미지 접근 URL을 반환.
-   * - 내부 구현(getOriginalInternal)로 위임해서 presigned URL을 발급한다.
-   */
   public OriginalUrlResponse getOriginalUrl(String roomId, String deckId, int page, String extHint) {
-    return getOriginalInternal(roomId, deckId, page, extHint); // 내부 위임
+    return getOriginalInternal(roomId, deckId, page, extHint);
   }
 
-  /**
-   * PDF → 이미지로 분할된 파일들(프론트에서 생성) 업로드.
-   * - 원본 이미지를 S3 에 /pages/ 경로로 업로드
-   * - 동시에 썸네일(webp)을 만들고 /thumbs/ 경로로 업로드
-   * - 썸네일은 CloudFront 공개 URL(있으면) 또는 presigned URL 로 반환
-   * - 첫 페이지 원본은 무조건 presigned URL 로 반환 (다운스트림에서 바로 표시하려는 용도)
-   * */
   public UploadPagesResponse uploadPages(String roomId, String deckId, List<MultipartFile> files) {
     String bucket = props.getS3().getBucket();
-    String root   = normalizePrefix(props.getS3().getRootPrefix()); // [수정] 정규화 적용
+    String root   = normalizePrefix(props.getS3().getRootPrefix());
 
     if (files == null || files.isEmpty()) {
       log.warn("[검증] 업로드 파일이 비어 있음: roomId={}, deckId={}", roomId, deckId);
@@ -77,7 +65,6 @@ public class DeckAssetService {
       try (InputStream inForThumb = f.getInputStream();
           ByteArrayOutputStream thumbOut = new ByteArrayOutputStream()) {
 
-        // (1) 원본 업로드
         try {
           s3.putObject(
               PutObjectRequest.builder()
@@ -88,12 +75,11 @@ public class DeckAssetService {
               RequestBody.fromInputStream(f.getInputStream(), f.getSize())
           );
           log.info("[S3] 원본 업로드 완료 → s3://{}/{}", bucket, origKey);
-        } catch (SdkException e) { // [수정] S3 예외 매핑
+        } catch (SdkException e) {
           log.error("[오류] 원본 업로드 실패: key={}, 이유={}", origKey, e.getMessage(), e);
           throw new CustomException(ImageAssetErrorCode.ORIGINAL_UPLOAD_FAILED);
         }
 
-        // (2) 썸네일 생성 후 업로드
         try {
           Thumbnails.of(inForThumb)
               .size(320, 320)
@@ -120,7 +106,6 @@ public class DeckAssetService {
           throw new CustomException(ImageAssetErrorCode.THUMBNAIL_UPLOAD_FAILED);
         }
 
-        // (3) 응답용 절대 URL
         String thumbUrlAbs = buildPublicOrPresignedUrl(thumbKey, false);
         thumbs.add(new ThumbnailDto(page, thumbUrlAbs));
 
@@ -143,11 +128,6 @@ public class DeckAssetService {
     return new UploadPagesResponse(deckId, files.size(), firstPageOriginalUrl, thumbs);
   }
 
-  /**
-   * 썸네일(메타) 목록 제공
-   * - 총 페이지 수를 받아 1..N 페이지에 대한 썸네일 절대 URL을 만들어서 반환
-   * - CloudFront 있으면 공개 URL, 없으면 presigned
-   */
   public SlidesMetaResponse getThumbnails(String roomId, String deckId, int totalPages) {
     if (totalPages <= 0) {
       throw new CustomException(ImageAssetErrorCode.INVALID_PAGE_NUMBER);
@@ -164,11 +144,6 @@ public class DeckAssetService {
     return new SlidesMetaResponse(roomId, deckId, totalPages, list);
   }
 
-  /**
-   * 특정 페이지의 원본 이미지 URL 발급 (항상 presigned)
-   * - extHint 로 확장자를 힌트로 받되, 화이트리스트 검사
-   * - 키를 만든 뒤 presign 해서 반환
-   */
   private OriginalUrlResponse getOriginalInternal(String roomId, String deckId, int page, String extHint) {
     if (page <= 0) {
       throw new CustomException(ImageAssetErrorCode.INVALID_PAGE_NUMBER);
@@ -188,9 +163,6 @@ public class DeckAssetService {
     return new OriginalUrlResponse(roomId, deckId, page, url);
   }
 
-  // ============== helpers ==============
-
-  // rootPrefix 꼬임 방지
   private String normalizePrefix(String s) {
     if (s == null || s.isBlank()) return "";
     String t = s.trim();
@@ -207,7 +179,6 @@ public class DeckAssetService {
         : "%s/%s/%s/%s/%s".formatted(root, roomId, deckId, folder, file);
   }
 
-  // CloudFront 우선, 없으면 presign
   private String buildPublicOrPresignedUrl(String key, boolean forcePresign) {
     String cf = props.getS3().getCloudfrontDomain();
     if (!forcePresign && cf != null && !cf.isBlank()) {
@@ -216,12 +187,10 @@ public class DeckAssetService {
     return buildPresignedUrl(key);
   }
 
-  // presign은 항상 https 로
   private String buildPresignedUrl(String key) {
     GetObjectRequest get = GetObjectRequest.builder()
         .bucket(props.getS3().getBucket())
         .key(key)
-        // .responseContentType("image/png") // [선택] ext에 맞춰 힌트 주고싶으면 세팅
         .build();
     PresignedGetObjectRequest pre = presigner.presignGetObject(b -> b
         .signatureDuration(Duration.ofSeconds(props.getS3().getPresignSeconds()))

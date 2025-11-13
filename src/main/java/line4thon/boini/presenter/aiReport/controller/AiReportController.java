@@ -55,17 +55,14 @@ public class AiReportController {
     public BaseResponse<List<MostReactionStickerResponse>> getMostReactionSticker(@PathVariable String roomId) {
         List<MostReactionStickerResponse> list = aiReportService.getMostReactionSticker(roomId);
 
-        // 1️⃣ roomId로 Report 조회
         Optional<Report> optionalReport = reportRepository.findByRoomId(roomId);
 
-        // 2️⃣ 존재할 때만 popularEmoji 값 변경
         optionalReport.ifPresent(report -> {
             try {
                 ObjectMapper mapper = new ObjectMapper();
-                // list를 JSON 문자열로 변환
                 String json = mapper.writeValueAsString(list);
                 report.setPopularEmoji(json);
-                reportRepository.save(report); // JPA가 더티체킹으로 자동 업데이트
+                reportRepository.save(report);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -89,21 +86,18 @@ public class AiReportController {
     public BaseResponse<MostRevisitResponse> getMostRevisit(@PathVariable String roomId) {
         MostRevisitResponse mostRevisitResponse = aiReportService.getMostRevisit(roomId);
 
-        // 1️⃣ roomId로 Report 조회
         Optional<Report> optionalReport = reportRepository.findByRoomId(roomId);
 
         optionalReport.ifPresent(report -> {
             try {
-                // mostRevisitResponse가 null이면 빈 JSON 배열로 처리
                 String revisitJson = (mostRevisitResponse != null)
                         ? objectMapper.writeValueAsString(mostRevisitResponse)
                         : "[]";
 
                 report.setRevisit(revisitJson);
-                reportRepository.save(report); // JPA가 더티체킹으로 자동 업데이트
+                reportRepository.save(report);
             } catch (JsonProcessingException e) {
                 e.printStackTrace();
-                // JSON 변환 실패 시 빈 배열로 안전하게 처리
                 report.setRevisit("[]");
                 reportRepository.save(report);
             }

@@ -2,7 +2,6 @@ package line4thon.boini.audience.option.controller;
 
 import line4thon.boini.audience.option.dto.request.OptionRequest;
 import line4thon.boini.audience.option.dto.response.UnlockResponse;
-import line4thon.boini.audience.option.service.OptionService;
 import line4thon.boini.global.common.response.BaseResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,13 +18,9 @@ public class OptionContoller {
 
     private final SimpMessagingTemplate messagingTemplate;
     private final RedisTemplate<String, String> redisTemplate;
-    private final OptionService optionService;
 
-    // 발표자가 방 옵션을 변경할 때 (클라이언트 -> /app/presentation/{sessionId}/option)
     @MessageMapping("/presentation/{sessionId}/option")
     public BaseResponse handleChangeOption(@DestinationVariable String sessionId, OptionRequest msg) {
-
-//        optionService.changeOption(sessionId, msg);
 
         redisTemplate.opsForValue().set("room:"+sessionId+":option:sticker", msg.getSticker());
         redisTemplate.opsForValue().set("room:"+sessionId+":option:question", msg.getQuestion());
@@ -37,7 +32,6 @@ public class OptionContoller {
         return BaseResponse.success("옵션이 성공적으로 변경되었습니다.", msg);
     }
 
-    // 발표자가 방 옵션 중 ppt 잠금을 변경할 때 (클라이언트 -> /app/presentation/{sessionId}/option/unlock)
     @MessageMapping("/presentation/{sessionId}/option/unlock/{unlock}")
     public BaseResponse handleChangeOptionUnlock(@DestinationVariable String sessionId, @DestinationVariable("unlock") String unlock) {
 

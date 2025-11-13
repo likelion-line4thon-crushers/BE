@@ -3,7 +3,7 @@ package line4thon.boini.audience.question.dto;
 import line4thon.boini.audience.question.dto.response.CreateQuestionResponse;
 
 public record QuestionEvent(
-    String type,                 // "QUESTION_CREATED"
+    String type,
     CreateQuestionResponse data
 ) {
   public static QuestionEvent created(CreateQuestionResponse r) {

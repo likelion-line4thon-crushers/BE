@@ -34,12 +34,8 @@ public class StickerService {
 
 
         try{
-            // Redis Stream Key
             String key = "room:" + sessionId + ":stickers";
 
-//            ObjectMapper mapper = new ObjectMapper();
-
-            // 저장할 필드 구성
             Map<String, Object> fields = new HashMap<>();
             fields.put("emoji", msg.getEmoji());
             fields.put("audienceId", msg.getAudienceID());
@@ -48,13 +44,8 @@ public class StickerService {
             fields.put("y", msg.getY());
             fields.put("slide", msg.getSlide());
 
-            // Redis Stream에 추가 (XADD)
             objectRedisTemplate.opsForStream().add(key, fields);
-            // JSON으로 변환 후 저장
-//            String json = mapper.writeValueAsString(fields);
-//            redisTemplate.opsForStream().add(key, Map.of("data", json));
 
-            //✨실시간 피드백 부분 - FIRST
             String key3 = "room:" + sessionId + ":liveFeedback:slide:" + msg.getSlide();
 
 
@@ -102,7 +93,6 @@ public class StickerService {
             }
 
 
-            //✨실시간 피드백 부분 - SECOND
             String key2 = "room:" + sessionId + ":liveFeedback:slide:" + msg.getSlide() + ":emoji:counts";
             redisTemplate.opsForHash().increment(key2, "emoji:"+msg.getEmoji(), 1);
 
@@ -113,19 +103,18 @@ public class StickerService {
                 Long fieldCount = redisTemplate.opsForHash().size(key2);
 
                 if(fieldCount >= 2){
-                    // 모든 필드-값 가져오기
                     Map<Object, Object> emojiCounts = redisTemplate.opsForHash().entries(key2);
 
                     String maxEmoji = null;
                     long maxCount = Long.MIN_VALUE;
 
                     for (Map.Entry<Object, Object> entry : emojiCounts.entrySet()) {
-                        String field = entry.getKey().toString();  // ex) "emoji:2"
+                        String field = entry.getKey().toString();
                         long count = Long.parseLong(entry.getValue().toString());
 
                         if (count > maxCount) {
                             maxCount = count;
-                            maxEmoji = field;  // 가장 큰 이모지 필드명 저장
+                            maxEmoji = field;
                         }
                     }
 
