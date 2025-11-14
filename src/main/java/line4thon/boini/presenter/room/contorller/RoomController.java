@@ -93,6 +93,12 @@ public class RoomController {
     String presenterPage = redisTemplate.opsForValue().get(key5);
 
     String key = "room:" + roomId + ":audience:online";
+
+    if(!Boolean.TRUE.equals(redisTemplate.opsForSet().isMember(key, issued.audienceId()))) {
+      String key4 = "room:" + roomId + ":enterAudienceCount";
+      redisTemplate.opsForValue().increment(key4);
+    }
+
     redisTemplate.opsForSet().add(key, issued.audienceId());
 
     String key2 = "room:" + roomId + ":slide:" + presenterPage;
@@ -100,9 +106,6 @@ public class RoomController {
 
     String key3= "room:" + roomId + ":deckId";
     String deckId = redisTemplate.opsForValue().get(key3);
-
-    String key4 = "room:" + roomId + ":enterAudienceCount";
-    redisTemplate.opsForValue().increment(key4);
 
     String totalpage = redisTemplate.opsForValue().get("room:" + roomId + ":totalPage");
     if (totalpage == null) {
