@@ -116,7 +116,7 @@ public class RoomService {
 
     redisTemplate.opsForValue().set("room:"+roomId+":option:sticker", "true");
     redisTemplate.opsForValue().set("room:"+roomId+":option:question", "true");
-    redisTemplate.opsForValue().set("room:"+roomId+":option:feedback", "false");
+    redisTemplate.opsForValue().set("room:"+roomId+":option:feedback", "true");
     redisTemplate.opsForValue().set("room:"+roomId+":option:slideUnlock", "true");
     redisTemplate.opsForValue().set("room:"+roomId+":maxSlide", "1");
 
