@@ -136,7 +136,7 @@ public class StickerService {
                         case 8 -> "'X'";
                         default -> "'기타 이모지'";
                     };
-                    String message = emojiText+"반응이 두드러지고 있어요!";
+                    String message = emojiText+" 반응이 두드러지고 있어요!";
 
                     redisTemplate.opsForHash().put(key3, "status", status);
                     redisTemplate.opsForHash().put(key3, "message", message);
