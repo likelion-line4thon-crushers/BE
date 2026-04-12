@@ -54,24 +54,29 @@ public class DeckAssetController {
     return BaseResponse.success(deckAssets.getOriginalUrl(roomId, deckId, page, ext));
   }
 
-  @PostMapping(value = "/{roomId}/{deckId}/pages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  @Operation(
-      summary = "프레젠테이션 페이지 이미지 업로드",
-      description = """
-      프론트엔드에서 PDF를 이미지로 분할한 결과를 업로드합니다.
-      - 요청 형식: `multipart/form-data`
-      - 필드명: `files[]` (여러 페이지 이미지)
-      - 서버에서는 각 페이지를 S3에 업로드하고, 썸네일(webp)도 함께 생성합니다.
-      - 응답에는 첫 페이지 원본 URL과 각 페이지 썸네일 목록이 포함됩니다.
-      """
-  )
-  public BaseResponse<UploadPagesResponse> uploadPages(
-      @PathVariable String roomId,
-      @PathVariable String deckId,
-      @RequestPart("files") List<MultipartFile> files
-  ) {
-    return BaseResponse.success(deckAssets.uploadPages(roomId, deckId, files));
-  }
+  // =====================================================================
+  // [과거 방식] 프론트에서 PDF → 이미지 변환 후 직접 업로드하는 방식
+  // 현재는 백엔드에서 청크 수신 → PDF 조립 → 이미지 변환 → SSE 스트리밍 방식으로 대체됨
+  // 관련 신규 API: POST /api/upload/chunk, GET /api/pdf/{pdfId}/stream
+  // =====================================================================
+  // @PostMapping(value = "/{roomId}/{deckId}/pages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  // @Operation(
+  //     summary = "프레젠테이션 페이지 이미지 업로드",
+  //     description = """
+  //     프론트엔드에서 PDF를 이미지로 분할한 결과를 업로드합니다.
+  //     - 요청 형식: `multipart/form-data`
+  //     - 필드명: `files[]` (여러 페이지 이미지)
+  //     - 서버에서는 각 페이지를 S3에 업로드하고, 썸네일(webp)도 함께 생성합니다.
+  //     - 응답에는 첫 페이지 원본 URL과 각 페이지 썸네일 목록이 포함됩니다.
+  //     """
+  // )
+  // public BaseResponse<UploadPagesResponse> uploadPages(
+  //     @PathVariable String roomId,
+  //     @PathVariable String deckId,
+  //     @RequestPart("files") List<MultipartFile> files
+  // ) {
+  //   return BaseResponse.success(deckAssets.uploadPages(roomId, deckId, files));
+  // }
 
   @GetMapping("/{roomId}/{deckId}/meta")
   @Operation(
