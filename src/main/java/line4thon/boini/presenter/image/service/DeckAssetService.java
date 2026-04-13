@@ -3,7 +3,6 @@ package line4thon.boini.presenter.image.service;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import line4thon.boini.global.common.exception.CustomException;
@@ -22,10 +21,7 @@ import line4thon.boini.presenter.image.dto.response.UploadPagesResponse;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 
 @Service
 @RequiredArgsConstructor
@@ -33,16 +29,19 @@ import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequ
 public class DeckAssetService {
 
   private final S3Client s3;
-  private final S3Presigner presigner;
   private final AppProperties props;
+  private final SlideS3Helper slideS3Helper;
 
   public OriginalUrlResponse getOriginalUrl(String roomId, String deckId, int page, String extHint) {
     return getOriginalInternal(roomId, deckId, page, extHint);
   }
 
+  // =====================================================================
+  // [과거 방식] 프론트에서 PDF → 이미지 변환 후 직접 업로드하는 방식
+  // 현재는 백엔드 청크 수신 → PDF 조립 → 이미지 변환 → SSE 스트리밍 방식으로 대체됨
+  // =====================================================================
   public UploadPagesResponse uploadPages(String roomId, String deckId, List<MultipartFile> files) {
     String bucket = props.getS3().getBucket();
-    String root   = normalizePrefix(props.getS3().getRootPrefix());
 
     if (files == null || files.isEmpty()) {
       log.warn("[검증] 업로드 파일이 비어 있음: roomId={}, deckId={}", roomId, deckId);
@@ -54,13 +53,10 @@ public class DeckAssetService {
 
     int page = 1;
     for (MultipartFile f : files) {
-      if (page <= 0) {
-        throw new CustomException(ImageAssetErrorCode.INVALID_PAGE_NUMBER);
-      }
       String contentType = f.getContentType();
-      String ext      = guessExt(f.getContentType());
-      String origKey  = buildKey(root, roomId, deckId, page, false, ext);
-      String thumbKey = buildKey(root, roomId, deckId, page, true,  "webp");
+      String ext      = guessExt(contentType);
+      String origKey  = slideS3Helper.buildKey(roomId, deckId, page, false, ext);
+      String thumbKey = slideS3Helper.buildKey(roomId, deckId, page, true, "webp");
 
       try (InputStream inForThumb = f.getInputStream();
           ByteArrayOutputStream thumbOut = new ByteArrayOutputStream()) {
@@ -106,11 +102,10 @@ public class DeckAssetService {
           throw new CustomException(ImageAssetErrorCode.THUMBNAIL_UPLOAD_FAILED);
         }
 
-        String thumbUrlAbs = buildPublicOrPresignedUrl(thumbKey, false);
-        thumbs.add(new ThumbnailDto(page, thumbUrlAbs));
+        thumbs.add(new ThumbnailDto(page, slideS3Helper.buildUrl(thumbKey, false)));
 
         if (page == 1) {
-          firstPageOriginalUrl = buildPublicOrPresignedUrl(origKey, true);
+          firstPageOriginalUrl = slideS3Helper.buildUrl(origKey, true);
         }
 
         page++;
@@ -133,12 +128,10 @@ public class DeckAssetService {
       throw new CustomException(ImageAssetErrorCode.INVALID_PAGE_NUMBER);
     }
 
-    String root = normalizePrefix(props.getS3().getRootPrefix());
     List<ThumbnailDto> list = new ArrayList<>(totalPages);
     for (int p = 1; p <= totalPages; p++) {
-      String key = buildKey(root, roomId, deckId, p, true, "webp");
-      String absoluteUrl = buildPublicOrPresignedUrl(key, false);
-      list.add(new ThumbnailDto(p, absoluteUrl));
+      String key = slideS3Helper.buildKey(roomId, deckId, p, true, "webp");
+      list.add(new ThumbnailDto(p, slideS3Helper.buildUrl(key, false)));
     }
     log.info("[S3] 총 {}개의 썸네일 메타 URL 생성 완료", totalPages);
     return new SlidesMetaResponse(roomId, deckId, totalPages, list);
@@ -150,61 +143,12 @@ public class DeckAssetService {
     }
 
     String ext = (extHint == null || extHint.isBlank()) ? "png" : extHint.toLowerCase();
-    if (!List.of("png","jpg","jpeg","webp").contains(ext)) {
+    if (!List.of("png", "jpg", "jpeg", "webp").contains(ext)) {
       throw new CustomException(RoomErrorCode.INVALID_REQUEST);
     }
 
-    String key = buildKey(
-        normalizePrefix(props.getS3().getRootPrefix()),
-        roomId, deckId, page, false, ext
-    );
-
-    String url = buildPresignedUrl(key);
-    return new OriginalUrlResponse(roomId, deckId, page, url);
-  }
-
-  private String normalizePrefix(String s) {
-    if (s == null || s.isBlank()) return "";
-    String t = s.trim();
-    while (t.startsWith("/")) t = t.substring(1);
-    while (t.endsWith("/")) t = t.substring(0, t.length()-1);
-    return t;
-  }
-
-  private String buildKey(String root, String roomId, String deckId, int page, boolean thumb, String ext) {
-    String folder = thumb ? "thumbs" : "pages";
-    String file   = "%04d.%s".formatted(page, ext);
-    return root.isEmpty()
-        ? "%s/%s/%s/%s".formatted(roomId, deckId, folder, file)
-        : "%s/%s/%s/%s/%s".formatted(root, roomId, deckId, folder, file);
-  }
-
-  private String buildPublicOrPresignedUrl(String key, boolean forcePresign) {
-    String cf = props.getS3().getCloudfrontDomain();
-    if (!forcePresign && cf != null && !cf.isBlank()) {
-      return "https://%s/%s".formatted(cf.replaceAll("/+$",""), urlEncodePath(key));
-    }
-    return buildPresignedUrl(key);
-  }
-
-  private String buildPresignedUrl(String key) {
-    GetObjectRequest get = GetObjectRequest.builder()
-        .bucket(props.getS3().getBucket())
-        .key(key)
-        .build();
-    PresignedGetObjectRequest pre = presigner.presignGetObject(b -> b
-        .signatureDuration(Duration.ofSeconds(props.getS3().getPresignSeconds()))
-        .getObjectRequest(get));
-    String url = pre.url().toString();
-    return url.startsWith("http://") ? "https://" + url.substring(7) : url;
-  }
-
-  private String urlEncodePath(String path) {
-    String[] parts = path.split("/");
-    return String.join("/",
-        java.util.Arrays.stream(parts)
-            .map(p -> java.net.URLEncoder.encode(p, java.nio.charset.StandardCharsets.UTF_8))
-            .toList());
+    String key = slideS3Helper.buildKey(roomId, deckId, page, false, ext);
+    return new OriginalUrlResponse(roomId, deckId, page, slideS3Helper.buildUrl(key, true));
   }
 
   private String guessExt(String contentType) {
