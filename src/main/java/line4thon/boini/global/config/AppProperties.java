@@ -14,6 +14,7 @@ public class AppProperties {
   private Jwt jwt = new Jwt();
   private Urls urls = new Urls();
   private S3 s3 = new S3();
+  private Pdf pdf = new Pdf();
 
   @Getter @Setter
   public static class Room {
@@ -40,5 +41,12 @@ public class AppProperties {
     private String cloudfrontDomain;
     private long presignSeconds = 3600;
     private String rootPrefix = "presentations";
+  }
+
+  @Getter @Setter
+  public static class Pdf {
+    private String tempDir = System.getProperty("java.io.tmpdir") + "/boini-uploads";
+    private long maxChunkSizeBytes = 2097152L; // 2MB
+    private int canStartSessionAfterPages = 10;
   }
 }
