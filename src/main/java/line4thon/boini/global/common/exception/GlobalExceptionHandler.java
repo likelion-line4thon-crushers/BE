@@ -4,6 +4,7 @@ import java.util.stream.Collectors;
 import line4thon.boini.global.common.response.BaseResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -24,14 +25,28 @@ public class GlobalExceptionHandler {
         ));
   }
 
-  // Validation 실패
+  // Validation 실패 (@RequestBody + @Valid)
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<BaseResponse<Object>> handleValidationException(
       MethodArgumentNotValidException ex) {
-    String errorMessages =
-        ex.getBindingResult().getFieldErrors().stream()
-            .map(e -> String.format("[%s] %s", e.getField(), e.getDefaultMessage()))
-            .collect(Collectors.joining(" / "));
+    return buildValidationErrorResponse(ex);
+  }
+
+  // Validation 실패 (@ModelAttribute + @Valid)
+  // @RequestBody 는 MethodArgumentNotValidException 을 던지지만,
+  // @ModelAttribute (multipart/form-data) 는 BindException 을 던집니다.
+  // ChunkUploadRequest 가 @ModelAttribute 로 바인딩되므로 이 핸들러가 필요합니다.
+  // 연결: ChunkUploadController → @Valid @ModelAttribute ChunkUploadRequest
+  @ExceptionHandler(BindException.class)
+  public ResponseEntity<BaseResponse<Object>> handleBindException(BindException ex) {
+    return buildValidationErrorResponse(ex);
+  }
+
+  // 두 Validation 핸들러의 공통 응답 생성 로직
+  private ResponseEntity<BaseResponse<Object>> buildValidationErrorResponse(BindException ex) {
+    String errorMessages = ex.getBindingResult().getFieldErrors().stream()
+        .map(e -> String.format("[%s] %s", e.getField(), e.getDefaultMessage()))
+        .collect(Collectors.joining(" / "));
 
     log.warn("Validation 오류 발생: {}", errorMessages);
 
