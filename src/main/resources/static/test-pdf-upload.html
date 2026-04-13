@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<!--
+  ╔══════════════════════════════════════════════════════════╗
+  ║              ⚠️  TEST FILE — 배포 전 삭제 필요              ║
+  ║  PDF 청크 업로드 + SSE 스트리밍 기능 수동 테스트 페이지        ║
+  ║  접근: http://localhost:8080/test-pdf-upload.html         ║
+  ║  삭제: src/main/resources/static/test-pdf-upload.html    ║
+  ╚══════════════════════════════════════════════════════════╝
+
+  [테스트 흐름]
+  1. roomId / deckId 입력
+  2. PDF 파일 선택
+  3. "업로드 시작" 클릭
+     → PDF를 2MB 청크로 분할 후 병렬 전송 (POST /api/upload/chunk)
+     → 마지막 청크 201 응답 수신 시 SSE 자동 구독 (GET /api/pdf/{pdfId}/stream)
+  4. 페이지 이미지가 렌더링되는 순서대로 화면에 표시됨
+  5. canStartSession=true 이벤트 수신 시 배너 표시
+
+  [연결 API]
+  - POST /api/upload/chunk
+  - GET  /api/pdf/{pdfId}/stream
+-->
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <title>[TEST] PDF 청크 업로드</title>
+  <style>
+    /* ── 레이아웃 ── */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #222; }
+
+    /* ── 테스트 배너 ── */
+    .test-banner {
+      background: #ff4d4f;
+      color: #fff;
+      text-align: center;
+      padding: 8px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      font-size: 13px;
+    }
+
+    .container { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+
+    /* ── 카드 ── */
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+    }
+    .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #444; }
+
+    /* ── 폼 ── */
+    .form-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .form-row label { font-size: 13px; color: #666; display: block; margin-bottom: 4px; }
+    .form-row input[type=text] {
+      border: 1px solid #d9d9d9; border-radius: 6px;
+      padding: 8px 12px; font-size: 14px; width: 200px;
+    }
+    .form-row input[type=file] { font-size: 13px; padding: 6px 0; }
+
+    /* ── 버튼 ── */
+    button {
+      background: #1677ff; color: #fff; border: none;
+      border-radius: 6px; padding: 10px 24px;
+      font-size: 14px; cursor: pointer; font-weight: 500;
+    }
+    button:disabled { background: #bfbfbf; cursor: not-allowed; }
+    button:hover:not(:disabled) { background: #0958d9; }
+
+    /* ── 청크 진행 상황 ── */
+    .chunk-grid {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;
+    }
+    .chunk-badge {
+      padding: 4px 10px; border-radius: 4px;
+      font-size: 12px; font-weight: 500;
+      background: #f5f5f5; color: #888;
+      transition: all .2s;
+    }
+    .chunk-badge.sending  { background: #e6f4ff; color: #1677ff; }
+    .chunk-badge.done     { background: #f6ffed; color: #52c41a; }
+    .chunk-badge.error    { background: #fff2f0; color: #ff4d4f; }
+
+    /* ── 상태 텍스트 ── */
+    .status-box {
+      background: #fafafa; border: 1px solid #f0f0f0;
+      border-radius: 6px; padding: 14px 16px;
+      font-size: 13px; line-height: 1.8;
+      max-height: 200px; overflow-y: auto;
+    }
+    .status-box .line { padding: 2px 0; }
+    .status-box .info    { color: #1677ff; }
+    .status-box .success { color: #52c41a; }
+    .status-box .warn    { color: #fa8c16; }
+    .status-box .err     { color: #ff4d4f; }
+
+    /* ── canStartSession 배너 ── */
+    .can-start-banner {
+      display: none;
+      background: #f6ffed; border: 1px solid #b7eb8f;
+      border-radius: 8px; padding: 12px 16px;
+      font-size: 14px; color: #389e0d; font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .can-start-banner.show { display: block; }
+
+    /* ── 페이지 이미지 그리드 ── */
+    .pages-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .page-item {
+      border: 1px solid #e8e8e8; border-radius: 8px;
+      overflow: hidden; background: #fafafa;
+      text-align: center;
+    }
+    .page-item img { width: 100%; display: block; }
+    .page-item .page-label {
+      padding: 6px; font-size: 12px; color: #888;
+      border-top: 1px solid #f0f0f0;
+    }
+    .page-placeholder {
+      height: 120px; display: flex; align-items: center;
+      justify-content: center; color: #bbb; font-size: 12px;
+    }
+
+    /* ── 완료 배너 ── */
+    .complete-banner {
+      display: none;
+      background: #e6f4ff; border: 1px solid #91caff;
+      border-radius: 8px; padding: 12px 16px;
+      font-size: 14px; color: #0958d9; font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .complete-banner.show { display: block; }
+
+    /* ── 성능 타이머 ── */
+    .perf-card {
+      background: #141414; border-radius: 10px;
+      padding: 20px 24px; margin-bottom: 20px;
+      color: #d9d9d9; font-family: monospace;
+    }
+    .perf-card h2 { font-size: 14px; color: #888; margin-bottom: 14px; font-family: sans-serif; }
+    .perf-row {
+      display: flex; justify-content: space-between;
+      align-items: center; padding: 6px 0;
+      border-bottom: 1px solid #1f1f1f;
+      font-size: 13px;
+    }
+    .perf-row:last-child { border-bottom: none; }
+    .perf-label { color: #888; }
+    .perf-value { color: #52c41a; font-weight: bold; font-size: 15px; }
+    .perf-value.pending { color: #555; }
+    .perf-value.highlight { color: #ffd666; }
+
+    /* ── SSE 이벤트 로그 ── */
+    .event-log { font-family: monospace; font-size: 12px; }
+    .event-log .page-event    { color: #1677ff; }
+    .event-log .complete-event { color: #52c41a; }
+    .event-log .error-event   { color: #ff4d4f; }
+  </style>
+</head>
+<body>
+
+<div class="test-banner">
+  ⚠️ TEST FILE — 배포 전 삭제 | src/main/resources/static/test-pdf-upload.html
+</div>
+
+<div class="container">
+
+  <!-- ① 업로드 설정 -->
+  <div class="card">
+    <h2>① 업로드 설정</h2>
+    <div class="form-row">
+      <div>
+        <label>roomId</label>
+        <input type="text" id="roomId" value="room-test-1" placeholder="roomId"/>
+      </div>
+      <div>
+        <label>deckId</label>
+        <input type="text" id="deckId" value="deck-test-1" placeholder="deckId"/>
+      </div>
+      <div>
+        <label>PDF 파일</label>
+        <input type="file" id="pdfFile" accept=".pdf"/>
+      </div>
+    </div>
+    <button id="startBtn" onclick="startUpload()">업로드 시작</button>
+    <button style="background:#ff7875; margin-left:8px;" onclick="resetAll()">초기화</button>
+  </div>
+
+  <!-- ② 청크 업로드 진행 -->
+  <div class="card">
+    <h2>② 청크 업로드 진행 <span id="chunkSummary" style="font-size:12px;color:#888;font-weight:400;"></span></h2>
+    <div class="chunk-grid" id="chunkGrid"></div>
+    <div class="status-box" id="statusBox" style="margin-top:12px;">
+      <div class="line info">대기 중...</div>
+    </div>
+  </div>
+
+  <!-- ② - 1 성능 타이머 -->
+  <div class="perf-card">
+    <h2>⏱ 성능 측정 (클라이언트 기준)</h2>
+    <div class="perf-row">
+      <span class="perf-label">① 청크 업로드 완료까지 (버튼 클릭 → 201 수신)</span>
+      <span class="perf-value pending" id="t-upload">-</span>
+    </div>
+    <div class="perf-row">
+      <span class="perf-label">② 첫 페이지 수신까지 (201 수신 → page[0] 이벤트)</span>
+      <span class="perf-value pending" id="t-first-page">-</span>
+    </div>
+    <div class="perf-row">
+      <span class="perf-label">③ canStartSession까지 (버튼 클릭 → canStartSession=true)</span>
+      <span class="perf-value highlight pending" id="t-can-start">-</span>
+    </div>
+    <div class="perf-row">
+      <span class="perf-label">④ 전체 완료까지 (버튼 클릭 → complete 이벤트)</span>
+      <span class="perf-value pending" id="t-complete">-</span>
+    </div>
+    <div class="perf-row">
+      <span class="perf-label">⑤ 페이지당 평균 SSE 수신 간격</span>
+      <span class="perf-value pending" id="t-avg-page">-</span>
+    </div>
+  </div>
+
+  <!-- ③ SSE 이벤트 로그 -->
+  <div class="card">
+    <h2>③ SSE 이벤트 로그</h2>
+    <div class="complete-banner" id="completeBanner"></div>
+    <div class="can-start-banner" id="canStartBanner">
+      ✅ canStartSession = true — 첫 10페이지 완료! 세션 시작 가능 상태입니다.
+    </div>
+    <div class="status-box event-log" id="eventLog">
+      <div class="line" style="color:#bbb">SSE 연결 전...</div>
+    </div>
+  </div>
+
+  <!-- ④ 렌더링된 페이지 -->
+  <div class="card">
+    <h2>④ 렌더링된 페이지 <span id="pageCount" style="font-size:12px;color:#888;font-weight:400;"></span></h2>
+    <div class="pages-grid" id="pagesGrid"></div>
+  </div>
+
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════
+//  [TEST] PDF 청크 업로드 + SSE 스트리밍 테스트 스크립트
+// ════════════════════════════════════════════════════════
+
+const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB (백엔드 app.pdf.max-chunk-size-bytes 와 동일)
+const API_BASE   = '';               // 같은 origin 사용 (로컬: http://localhost:8080)
+
+let eventSource = null; // SSE 연결 인스턴스
+
+// ── 성능 측정 타이머 ──────────────────────────────────────
+const perf = {
+  uploadStart:    null, // 버튼 클릭 시각
+  assembledAt:    null, // 201 수신 시각
+  firstPageAt:    null, // 첫 page 이벤트 수신 시각
+  canStartAt:     null, // canStartSession=true 수신 시각
+  completeAt:     null, // complete 이벤트 수신 시각
+  pageTimes:      [],   // 각 page 이벤트 수신 시각 목록 (간격 계산용)
+};
+
+function perfReset() {
+  Object.keys(perf).forEach(k => perf[k] = null);
+  perf.pageTimes = [];
+  ['t-upload','t-first-page','t-can-start','t-complete','t-avg-page']
+    .forEach(id => { const el = document.getElementById(id); el.textContent = '-'; el.className = 'perf-value pending'; });
+}
+
+function perfSet(id, ms, highlight) {
+  const el = document.getElementById(id);
+  el.textContent = ms < 1000 ? `${ms}ms` : `${(ms/1000).toFixed(2)}s`;
+  el.className = 'perf-value' + (highlight ? ' highlight' : '');
+}
+
+// ── 업로드 시작 ──────────────────────────────────────────
+async function startUpload() {
+  const roomId  = document.getElementById('roomId').value.trim();
+  const deckId  = document.getElementById('deckId').value.trim();
+  const fileInput = document.getElementById('pdfFile');
+
+  if (!roomId || !deckId)       return alert('roomId, deckId를 입력하세요.');
+  if (!fileInput.files.length)  return alert('PDF 파일을 선택하세요.');
+
+  const file       = fileInput.files[0];
+  const uploadId   = crypto.randomUUID();           // 업로드 세션 고유 ID
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+  log('status', 'info', `파일: ${file.name} (${formatBytes(file.size)}) → ${totalChunks}개 청크`);
+  log('status', 'info', `uploadId: ${uploadId}`);
+
+  document.getElementById('startBtn').disabled = true;
+  document.getElementById('chunkSummary').textContent = `(0 / ${totalChunks} 완료)`;
+  renderChunkBadges(totalChunks);
+
+  // 타이머 시작
+  perfReset();
+  perf.uploadStart = Date.now();
+
+  // ── 청크 분할 후 병렬 전송 ──────────────────────────────
+  // Promise.allSettled: 일부 청크 실패해도 나머지 결과를 모두 수집
+  const uploadPromises = Array.from({ length: totalChunks }, (_, i) => {
+    const start = i * CHUNK_SIZE;
+    const end   = Math.min(start + CHUNK_SIZE, file.size);
+    return sendChunk({
+      chunk: file.slice(start, end),
+      uploadId, chunkIndex: i, totalChunks,
+      fileName: file.name, fileSize: file.size,
+      roomId, deckId,
+    });
+  });
+
+  const results = await Promise.allSettled(uploadPromises);
+
+  // 201 응답 (조립 완료) 을 찾아서 SSE 구독 시작
+  const assembled = results
+    .filter(r => r.status === 'fulfilled')
+    .map(r => r.value)
+    .find(v => v?.status === 'READY');
+
+  if (assembled) {
+    // ① 청크 업로드 완료 시간 기록
+    perf.assembledAt = Date.now();
+    perfSet('t-upload', perf.assembledAt - perf.uploadStart);
+
+    log('status', 'success', `✅ 조립 완료! pdfId: ${assembled.pdfId}, totalPages: ${assembled.totalPages}`);
+    log('status', 'info',    `SSE 구독 시작: ${assembled.streamUrl}`);
+    connectSSE(assembled.pdfId, assembled.streamUrl, assembled.totalPages);
+  } else {
+    log('status', 'err', '❌ 조립 완료 응답을 받지 못했습니다. 콘솔을 확인하세요.');
+    document.getElementById('startBtn').disabled = false;
+  }
+}
+
+// ── 청크 하나 전송 ────────────────────────────────────────
+async function sendChunk({ chunk, uploadId, chunkIndex, totalChunks, fileName, fileSize, roomId, deckId }) {
+  setBadge(chunkIndex, 'sending');
+
+  const form = new FormData();
+  form.append('chunk',       chunk);
+  form.append('uploadId',    uploadId);
+  form.append('chunkIndex',  chunkIndex);
+  form.append('totalChunks', totalChunks);
+  form.append('fileName',    fileName);
+  form.append('fileSize',    fileSize);
+  form.append('roomId',      roomId);
+  form.append('deckId',      deckId);
+
+  try {
+    const res  = await fetch(`${API_BASE}/api/upload/chunk`, { method: 'POST', body: form });
+    const json = await res.json();
+
+    if (res.status === 201) {
+      // 마지막 청크: 조립 완료 → data 에 pdfId, streamUrl 포함
+      setBadge(chunkIndex, 'done');
+      updateChunkSummary(totalChunks);
+      log('status', 'success', `청크 ${chunkIndex} 전송 완료 (201 — 조립 완료)`);
+      return json.data; // AssemblyCompleteResponse
+    } else if (res.status === 200) {
+      // 수신 중
+      setBadge(chunkIndex, 'done');
+      updateChunkSummary(totalChunks);
+      log('status', 'info', `청크 ${chunkIndex} 전송 완료 (수신 중 ${json.data?.receivedChunks}/${totalChunks})`);
+      return null;
+    } else {
+      throw new Error(`HTTP ${res.status}: ${JSON.stringify(json)}`);
+    }
+  } catch (e) {
+    setBadge(chunkIndex, 'error');
+    log('status', 'err', `청크 ${chunkIndex} 실패: ${e.message}`);
+    throw e;
+  }
+}
+
+// ── SSE 구독 ─────────────────────────────────────────────
+function connectSSE(pdfId, streamUrl, totalPages) {
+  if (eventSource) eventSource.close();
+
+  // EventSource: text/event-stream 자동 처리
+  eventSource = new EventSource(`${API_BASE}${streamUrl}`);
+  document.getElementById('eventLog').innerHTML = ''; // 초기화
+  initPageGrid(totalPages);
+
+  // page 이벤트: 페이지 하나 렌더링 완료
+  eventSource.addEventListener('page', (e) => {
+    const data = JSON.parse(e.data);
+    const now  = Date.now();
+    perf.pageTimes.push(now);
+
+    // ② 첫 페이지 수신 시간
+    if (data.pageIndex === 0) {
+      perf.firstPageAt = now;
+      perfSet('t-first-page', now - perf.assembledAt);
+    }
+
+    // ③ canStartSession 시간
+    if (data.canStartSession && !perf.canStartAt) {
+      perf.canStartAt = now;
+      perfSet('t-can-start', now - perf.uploadStart, true);
+      document.getElementById('canStartBanner').classList.add('show');
+    }
+
+    logEvent('page-event',
+      `[page ${data.pageIndex}] ${data.width}x${data.height} | canStart=${data.canStartSession}`);
+    renderPage(data);
+  });
+
+  // complete 이벤트: 전체 완료
+  eventSource.addEventListener('complete', (e) => {
+    const data = JSON.parse(e.data);
+    const now  = Date.now();
+
+    // ④ 전체 완료 시간
+    perf.completeAt = now;
+    perfSet('t-complete', now - perf.uploadStart);
+
+    // ⑤ 페이지당 평균 간격 (page 이벤트 간 간격의 평균)
+    if (perf.pageTimes.length > 1) {
+      const gaps = perf.pageTimes.slice(1).map((t, i) => t - perf.pageTimes[i]);
+      const avg  = Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length);
+      perfSet('t-avg-page', avg);
+    }
+
+    logEvent('complete-event', `[complete] totalPages=${data.totalPages} | status=${data.status}`);
+
+    const banner = document.getElementById('completeBanner');
+    banner.textContent = `🎉 전체 완료! totalPages=${data.totalPages} | 총 ${((now - perf.uploadStart)/1000).toFixed(2)}s`;
+    banner.classList.add('show');
+
+    eventSource.close();
+    document.getElementById('startBtn').disabled = false;
+  });
+
+  // error 이벤트: 특정 페이지 렌더링 실패
+  eventSource.addEventListener('error', (e) => {
+    // SSE 연결 자체 오류와 서버가 보낸 error 이벤트를 구분
+    if (e.data) {
+      const data = JSON.parse(e.data);
+      logEvent('error-event', `[error] pageIndex=${data.pageIndex} | ${data.message} (${data.code})`);
+    } else {
+      logEvent('error-event', `[연결 오류] SSE 연결이 끊겼습니다.`);
+      document.getElementById('startBtn').disabled = false;
+    }
+  });
+}
+
+// ── 페이지 그리드 ─────────────────────────────────────────
+function initPageGrid(totalPages) {
+  const grid = document.getElementById('pagesGrid');
+  grid.innerHTML = '';
+  document.getElementById('pageCount').textContent = `(0 / ${totalPages} 완료)`;
+
+  for (let i = 0; i < totalPages; i++) {
+    const item = document.createElement('div');
+    item.className = 'page-item';
+    item.id = `page-item-${i}`;
+    item.innerHTML = `
+      <div class="page-placeholder">대기 중...</div>
+      <div class="page-label">Page ${i + 1}</div>
+    `;
+    grid.appendChild(item);
+  }
+}
+
+function renderPage(data) {
+  const item = document.getElementById(`page-item-${data.pageIndex}`);
+  if (!item) return;
+
+  item.innerHTML = `
+    <img src="${data.imageUrl}" alt="Page ${data.pageIndex + 1}" loading="lazy"/>
+    <div class="page-label">Page ${data.pageIndex + 1} (${data.width}×${data.height})</div>
+  `;
+
+  const doneCount = document.querySelectorAll('.page-item img').length;
+  document.getElementById('pageCount').textContent = `(${doneCount} / ${data.totalPages} 완료)`;
+}
+
+// ── 청크 배지 UI ──────────────────────────────────────────
+function renderChunkBadges(totalChunks) {
+  const grid = document.getElementById('chunkGrid');
+  grid.innerHTML = '';
+  for (let i = 0; i < totalChunks; i++) {
+    const badge = document.createElement('span');
+    badge.className = 'chunk-badge';
+    badge.id = `chunk-${i}`;
+    badge.textContent = `청크 ${i}`;
+    grid.appendChild(badge);
+  }
+}
+
+function setBadge(index, state) {
+  const badge = document.getElementById(`chunk-${index}`);
+  if (badge) badge.className = `chunk-badge ${state}`;
+}
+
+function updateChunkSummary(totalChunks) {
+  const done = document.querySelectorAll('.chunk-badge.done').length;
+  document.getElementById('chunkSummary').textContent = `(${done} / ${totalChunks} 완료)`;
+}
+
+// ── 로그 유틸 ─────────────────────────────────────────────
+function log(target, type, msg) {
+  const box  = document.getElementById(target === 'status' ? 'statusBox' : 'eventLog');
+  const time = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+  const div  = document.createElement('div');
+  div.className = `line ${type}`;
+  div.textContent = `[${time}] ${msg}`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function logEvent(cls, msg) {
+  const box  = document.getElementById('eventLog');
+  const time = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+  const div  = document.createElement('div');
+  div.className = `line ${cls}`;
+  div.textContent = `[${time}] ${msg}`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+// ── 초기화 ────────────────────────────────────────────────
+function resetAll() {
+  if (eventSource) { eventSource.close(); eventSource = null; }
+
+  document.getElementById('chunkGrid').innerHTML   = '';
+  document.getElementById('pagesGrid').innerHTML   = '';
+  document.getElementById('eventLog').innerHTML    = '<div class="line" style="color:#bbb">SSE 연결 전...</div>';
+  document.getElementById('statusBox').innerHTML   = '<div class="line info">대기 중...</div>';
+  document.getElementById('chunkSummary').textContent = '';
+  document.getElementById('pageCount').textContent    = '';
+  document.getElementById('canStartBanner').classList.remove('show');
+  document.getElementById('completeBanner').classList.remove('show');
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('pdfFile').value = '';
+  perfReset();
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024)       return `${bytes} B`;
+  if (bytes < 1024*1024)  return `${(bytes/1024).toFixed(1)} KB`;
+  return `${(bytes/(1024*1024)).toFixed(2)} MB`;
+}
+</script>
+</body>
+</html>
