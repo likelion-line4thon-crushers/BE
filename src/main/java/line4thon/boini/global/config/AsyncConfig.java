@@ -32,4 +32,20 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * 증분 클러스터링 FastAPI 호출 전용 스레드풀.
+     * ClusterBroadcaster.broadcast() 가 이 풀에서 실행되어 질문 저장 흐름을 블로킹하지 않는다.
+     * 연결: ClusterBroadcaster → @Async("clusterExecutor")
+     */
+    @Bean(name = "clusterExecutor")
+    public Executor clusterExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(50);
+        executor.setThreadNamePrefix("cluster-");
+        executor.initialize();
+        return executor;
+    }
 }

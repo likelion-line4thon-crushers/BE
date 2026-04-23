@@ -2,6 +2,7 @@ package line4thon.boini.audience.question.service;
 
 import line4thon.boini.audience.question.dto.QuestionEvent;
 import line4thon.boini.audience.question.dto.requeset.CreateQuestionRequest;
+import line4thon.boini.audience.question.dto.requeset.QuestionInput;
 import line4thon.boini.audience.question.dto.response.CreateQuestionResponse;
 import line4thon.boini.audience.question.exception.AudienceQuestionErrorCode;
 import line4thon.boini.global.common.exception.CustomException;
@@ -26,6 +27,7 @@ public class QuestionService {
   private final SimpMessagingTemplate broker;
   private static final long STREAM_MAXLEN = 10_000L;
   private final RedisTemplate<String, String> redisTemplate;
+  private final ClusterBroadcaster clusterBroadcaster;
 
   public CreateQuestionResponse create(String roomId, CreateQuestionRequest request) {
 
@@ -48,6 +50,7 @@ public class QuestionService {
     h.put("audienceId", request.audienceId());
     h.put("content", request.content());
     h.put("ts", String.valueOf(ts));
+    h.put("status", "active");
 
     try {
       redis.opsForHash().putAll(hKey, h);
@@ -67,6 +70,8 @@ public class QuestionService {
 
     log.info("[WS] 질문 실시간 전송 완료 (roomId={}, audienceId={}, slide={}, content='{}')",
         roomId, request.audienceId(), request.slide(), request.content());
+
+    clusterBroadcaster.broadcast(roomId, new QuestionInput(id, request.content(), request.slide(), ts));
 
     try {
       Map<String, String> streamBody = Map.of(
@@ -123,6 +128,9 @@ public class QuestionService {
       } else if (slide != null && s != slide) {
         continue;
       }
+
+      String status = (String) h.get("status");
+      if ("deleted".equals(status)) continue;
 
       long ts = Long.parseLong((String) h.get("ts"));
       result.add(new CreateQuestionResponse(
