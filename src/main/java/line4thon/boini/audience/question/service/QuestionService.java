@@ -50,6 +50,7 @@ public class QuestionService {
     h.put("audienceId", request.audienceId());
     h.put("content", request.content());
     h.put("ts", String.valueOf(ts));
+    h.put("status", "active");
 
     try {
       redis.opsForHash().putAll(hKey, h);
@@ -127,6 +128,9 @@ public class QuestionService {
       } else if (slide != null && s != slide) {
         continue;
       }
+
+      String status = (String) h.get("status");
+      if ("deleted".equals(status)) continue;
 
       long ts = Long.parseLong((String) h.get("ts"));
       result.add(new CreateQuestionResponse(
