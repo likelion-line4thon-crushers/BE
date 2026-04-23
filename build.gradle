@@ -77,6 +77,9 @@ dependencies {
     // PDF 파싱 (청크 조립 후 페이지별 이미지 변환)
     implementation 'org.apache.pdfbox:pdfbox:3.0.2'
 
+    // FastAPI 비동기 HTTP 호출용
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+
 }
 
 tasks.named('test') {
