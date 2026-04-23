@@ -2,6 +2,7 @@ package line4thon.boini.audience.question.service;
 
 import line4thon.boini.audience.question.dto.QuestionEvent;
 import line4thon.boini.audience.question.dto.requeset.CreateQuestionRequest;
+import line4thon.boini.audience.question.dto.requeset.QuestionInput;
 import line4thon.boini.audience.question.dto.response.CreateQuestionResponse;
 import line4thon.boini.audience.question.exception.AudienceQuestionErrorCode;
 import line4thon.boini.global.common.exception.CustomException;
@@ -26,6 +27,7 @@ public class QuestionService {
   private final SimpMessagingTemplate broker;
   private static final long STREAM_MAXLEN = 10_000L;
   private final RedisTemplate<String, String> redisTemplate;
+  private final ClusterBroadcaster clusterBroadcaster;
 
   public CreateQuestionResponse create(String roomId, CreateQuestionRequest request) {
 
@@ -67,6 +69,8 @@ public class QuestionService {
 
     log.info("[WS] 질문 실시간 전송 완료 (roomId={}, audienceId={}, slide={}, content='{}')",
         roomId, request.audienceId(), request.slide(), request.content());
+
+    clusterBroadcaster.broadcast(roomId, new QuestionInput(id, request.content(), request.slide(), ts));
 
     try {
       Map<String, String> streamBody = Map.of(
