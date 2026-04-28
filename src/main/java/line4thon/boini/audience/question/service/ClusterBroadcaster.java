@@ -2,6 +2,7 @@ package line4thon.boini.audience.question.service;
 
 import line4thon.boini.audience.question.dto.ClusterEvent;
 import line4thon.boini.audience.question.dto.requeset.QuestionInput;
+import line4thon.boini.audience.question.dto.response.ClusterReportResponse;
 import line4thon.boini.audience.question.dto.response.FastApiClusterResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +27,21 @@ public class ClusterBroadcaster {
    * @Async("clusterExecutor") 로 별도 스레드풀에서 실행되어 질문 저장 흐름을 블로킹하지 않는다.
    * 같은 클래스 내부 호출 시 @Async가 동작하지 않는 Spring 프록시 제약 때문에 별도 컴포넌트로 분리했다.
    */
+  public ClusterReportResponse getCurrentClusters(String roomId) {
+    try {
+      FastApiClusterResponse resp = fastApiWebClient.get()
+          .uri("/report/questions/rooms/{roomId}/clusters", roomId)
+          .retrieve()
+          .bodyToMono(FastApiClusterResponse.class)
+          .block(Duration.ofSeconds(10));
+
+      return (resp != null) ? resp.data() : null;
+    } catch (Exception e) {
+      log.warn("[CLUSTER] 현재 상태 조회 실패 (roomId={}): {}", roomId, e.getMessage());
+      return null;
+    }
+  }
+
   @Async("clusterExecutor")
   public void broadcast(String roomId, QuestionInput input) {
     try {
