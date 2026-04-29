@@ -2,7 +2,9 @@ package line4thon.boini.audience.question.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import line4thon.boini.audience.question.dto.response.ClusterReportResponse;
 import line4thon.boini.audience.question.dto.response.CreateQuestionResponse;
+import line4thon.boini.audience.question.service.ClusterBroadcaster;
 import line4thon.boini.audience.question.service.QuestionManageService;
 import line4thon.boini.global.common.response.BaseResponse;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +19,7 @@ import java.util.List;
 public class QuestionManageController {
 
   private final QuestionManageService questionManageService;
+  private final ClusterBroadcaster clusterBroadcaster;
 
   @PatchMapping("/{roomId}/{questionId}/complete")
   @Operation(
@@ -42,6 +45,17 @@ public class QuestionManageController {
   ) {
     questionManageService.delete(roomId, questionId);
     return BaseResponse.success("질문이 삭제되었습니다.");
+  }
+
+  @GetMapping("/rooms/{roomId}/clusters")
+  @Operation(
+      summary = "현재 클러스터 상태 조회",
+      description = "Redis에 저장된 현재 클러스터 상태를 반환합니다. 발표자 페이지 새로고침 시 초기 상태 복원에 사용합니다."
+  )
+  public BaseResponse<ClusterReportResponse> currentClusters(
+      @PathVariable String roomId
+  ) {
+    return BaseResponse.success("클러스터 상태를 조회했습니다.", clusterBroadcaster.getCurrentClusters(roomId));
   }
 
   @GetMapping("/rooms/{roomId}/completed")

@@ -130,7 +130,7 @@ public class QuestionService {
       }
 
       String status = (String) h.get("status");
-      if ("deleted".equals(status)) continue;
+      if ("deleted".equals(status) || "completed".equals(status)) continue;
 
       long ts = Long.parseLong((String) h.get("ts"));
       result.add(new CreateQuestionResponse(
