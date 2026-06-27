@@ -21,7 +21,10 @@ import line4thon.boini.presenter.image.dto.response.UploadPagesResponse;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 @Service
 @RequiredArgsConstructor
@@ -128,12 +131,15 @@ public class DeckAssetService {
       throw new CustomException(ImageAssetErrorCode.INVALID_PAGE_NUMBER);
     }
 
+    String bucket = props.getS3().getBucket();
     List<ThumbnailDto> list = new ArrayList<>(totalPages);
     for (int p = 1; p <= totalPages; p++) {
       String key = slideS3Helper.buildKey(roomId, deckId, p, true, "webp");
-      list.add(new ThumbnailDto(p, slideS3Helper.buildUrl(key, false)));
+      if (objectExists(bucket, key)) {
+        list.add(new ThumbnailDto(p, slideS3Helper.buildUrl(key, false)));
+      }
     }
-    log.info("[S3] 총 {}개의 썸네일 메타 URL 생성 완료", totalPages);
+    log.info("[S3] 총 {}개의 썸네일 메타 URL 생성 완료 (요청 totalPages={})", list.size(), totalPages);
     return new SlidesMetaResponse(roomId, deckId, totalPages, list);
   }
 
@@ -148,7 +154,22 @@ public class DeckAssetService {
     }
 
     String key = slideS3Helper.buildKey(roomId, deckId, page, false, ext);
+    if (!objectExists(props.getS3().getBucket(), key)) {
+      throw new CustomException(ImageAssetErrorCode.OBJECT_NOT_FOUND);
+    }
     return new OriginalUrlResponse(roomId, deckId, page, slideS3Helper.buildUrl(key, true));
+  }
+
+  private boolean objectExists(String bucket, String key) {
+    try {
+      s3.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build());
+      return true;
+    } catch (NoSuchKeyException e) {
+      return false;
+    } catch (S3Exception e) {
+      if (e.statusCode() == 404) return false;
+      throw e;
+    }
   }
 
   private String guessExt(String contentType) {

@@ -1,0 +1,46 @@
+# 로컬 개발용 인프라 (MySQL + Redis)
+# 사용법:
+#   docker compose -f docker-compose.local.yml up -d      # 띄우기
+#   docker compose -f docker-compose.local.yml down        # 내리기
+#   docker compose -f docker-compose.local.yml down -v     # 데이터까지 삭제
+#
+# 앱(BE/AI)은 로컬에서 직접 실행하며, 아래 두 컨테이너에 localhost로 접속합니다.
+#   - MySQL : localhost:3306  (db=boini, user=root, pw=boini1234)
+#   - Redis : localhost:6379
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: boini-mysql
+    # aiomysql(FastAPI) 호환을 위해 native password 사용
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: boini1234
+      MYSQL_DATABASE: boini
+      TZ: Asia/Seoul
+    ports:
+      - "3306:3306"
+    volumes:
+      - boini-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pboini1234"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: boini-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - boini-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  boini-mysql-data:
+  boini-redis-data:
