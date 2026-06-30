@@ -182,6 +182,20 @@ public class PdfChunkService {
             throw new CustomException(PdfErrorCode.ASSEMBLY_FAILED);
         }
 
+        // 방 생성 시 totalPage 는 placeholder(1)로 저장된다(프론트가 업로드 전 createRoom(1) 호출).
+        // 실제 페이지 수가 확정된 지금 갱신하지 않으면, audience join 응답의 totalPages 가 1로 남아
+        // 청중이 1페이지만 보고 발표자 페이지 이동도 따라가지 못한다.
+        redis.opsForValue().set("room:" + roomId + ":totalPage", String.valueOf(totalPages));
+        log.info("[조립] room totalPage 갱신: roomId={}, totalPages={}", roomId, totalPages);
+
+        // 방 생성 시 placeholder(totalPages=1)로 slide/revisit 세트가 슬라이드 1만 초기화됐다.
+        // 실제 페이지 수가 확정된 지금 2..N 도 동일하게 시딩하지 않으면, PageService.getSlideAudienceCounts
+        // 의 (setSize - 1) 보정이 sentinel 없는 슬라이드에서 음수/누락 집계를 내어 청중 분포 인디케이터가 깨진다.
+        for (int i = 1; i <= totalPages; i++) {
+            redis.opsForSet().add("room:" + roomId + ":slide:" + i, "_init_");      // set-add 는 멱등
+            redis.opsForValue().setIfAbsent("room:" + roomId + ":revisit:" + i, "0"); // 기존 값/카운트 보존
+        }
+
         // @Async: 즉시 반환됩니다. 실제 렌더링은 pdfParseExecutor 스레드풀에서 진행됩니다.
         // 렌더링 결과는 PdfSseRegistry 를 통해 프론트로 스트리밍됩니다.
         pdfParseService.parseAndStream(pdfId, roomId, deckId, assembledPath, totalPages);

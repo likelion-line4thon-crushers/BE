@@ -8,6 +8,8 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import line4thon.boini.global.config.AppProperties;
 import line4thon.boini.presenter.image.service.SlideS3Helper;
 import line4thon.boini.presenter.pdf.dto.event.CompleteEventData;
@@ -19,6 +21,7 @@ import net.coobird.thumbnailator.Thumbnails;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.PDFRenderer;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -56,6 +59,7 @@ public class PdfParseService {
     private final AppProperties props;
     private final SlideS3Helper slideS3Helper; // S3 키 생성 및 URL 발급 (DeckAssetService 와 공유)
     private final PdfSseRegistry sseRegistry;  // 렌더링 완료 이벤트를 프론트로 전달
+    private final SimpMessagingTemplate messagingTemplate; // 페이지 완료 WebSocket 브로드캐스트
 
     /**
      * PDF 파일을 페이지별로 파싱하고 SSE 로 스트리밍합니다.
@@ -155,6 +159,16 @@ public class PdfParseService {
                 // 총 페이지가 10장 미만이면 마지막 페이지에서 true
                 .canStartSession(isCanStartSession(pageIndex, totalPages, canStartSessionAfter))
                 .build());
+
+            // WebSocket broadcast: audience receives pages as they are parsed
+            Map<String, Object> slideReadyPayload = new LinkedHashMap<>();
+            slideReadyPayload.put("pageIndex", pageIndex);
+            slideReadyPayload.put("totalPages", totalPages);
+            slideReadyPayload.put("imageUrl", imageUrl);
+            messagingTemplate.convertAndSend(
+                "/topic/presentation/" + roomId + "/slideReady",
+                slideReadyPayload
+            );
 
         } catch (Exception e) {
             log.error("[PDF] 페이지 처리 실패: pdfId={}, pageIndex={}", pdfId, pageIndex, e);
