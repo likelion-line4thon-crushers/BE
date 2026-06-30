@@ -216,4 +216,20 @@ public class RoomController {
         "status", "live"
     ));
   }
+
+  @GetMapping("/{roomId}/session/status")
+  @Operation(
+      summary = "세션 상태 조회",
+      description = """
+        해당 방의 현재 세션 상태(`waiting` / `live` / `ended`)를 반환합니다.
+        발표자가 준비 페이지로 (재)진입했을 때 이미 시작된 세션인지 판별하는 데 사용합니다.
+        """
+  )
+  public BaseResponse<Map<String, String>> sessionStatus(@PathVariable String roomId) {
+    String status = roomService.getSessionStatus(roomId).name();
+    return BaseResponse.success(Map.of(
+        "roomId", roomId,
+        "status", status
+    ));
+  }
 }
