@@ -113,7 +113,7 @@ public class PdfParseService {
         } finally {
             // 성공/실패 무관하게 temp 디렉토리 정리
             // (청크 파일들 + assembled.pdf 포함)
-            deleteUploadDir(pdfFile.getParent());
+            deleteUploadDir(resolveCleanupDir(pdfFile));
         }
     }
 
@@ -259,5 +259,13 @@ public class PdfParseService {
         } catch (IOException e) {
             log.warn("[PDF] 임시 파일 정리 실패: {}", dir);
         }
+    }
+
+    private Path resolveCleanupDir(Path pdfFile) {
+        Path parent = pdfFile.getParent();
+        if (parent != null && "converted".equals(parent.getFileName().toString()) && parent.getParent() != null) {
+            return parent.getParent();
+        }
+        return parent;
     }
 }

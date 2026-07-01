@@ -8,14 +8,18 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import line4thon.boini.global.common.exception.CustomException;
 import line4thon.boini.global.config.AppProperties;
+import line4thon.boini.presenter.image.service.SlideNoteService;
+import line4thon.boini.presenter.pdf.dto.SlideNoteDraft;
 import line4thon.boini.presenter.pdf.dto.request.ChunkUploadRequest;
 import line4thon.boini.presenter.pdf.dto.response.AssemblyCompleteResponse;
 import line4thon.boini.presenter.pdf.dto.response.ChunkReceiveResponse;
 import line4thon.boini.presenter.pdf.dto.response.ChunkUploadResult;
 import line4thon.boini.presenter.pdf.exception.PdfErrorCode;
+import line4thon.boini.presenter.pdf.model.PresentationFileType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
@@ -53,6 +57,9 @@ public class PdfChunkService {
     private final AppProperties props;
     private final StringRedisTemplate redis;
     private final PdfParseService pdfParseService; // 조립 완료 후 비동기 파싱 트리거
+    private final OfficeConversionService officeConversionService;
+    private final SlideNotesExtractionService slideNotesExtractionService;
+    private final SlideNoteService slideNoteService;
 
     /**
      * 청크 하나를 수신하고 처리합니다. (ChunkUploadController 에서 호출)
@@ -93,6 +100,8 @@ public class PdfChunkService {
         if (request.getChunkIndex() < 0 || request.getChunkIndex() >= request.getTotalChunks()) {
             throw new CustomException(PdfErrorCode.INVALID_CHUNK_INDEX);
         }
+        PresentationFileType.fromFileName(request.getFileName())
+            .orElseThrow(() -> new CustomException(PdfErrorCode.UNSUPPORTED_PRESENTATION_FILE));
     }
 
     /**
@@ -126,6 +135,8 @@ public class PdfChunkService {
         setIfAbsent(metaKey(uploadId, "deckId"), request.getDeckId());
         setIfAbsent(metaKey(uploadId, "fileName"), request.getFileName());
         setIfAbsent(metaKey(uploadId, "totalChunks"), String.valueOf(request.getTotalChunks()));
+        PresentationFileType.fromFileName(request.getFileName())
+            .ifPresent(type -> setIfAbsent(metaKey(uploadId, "fileType"), type.name()));
     }
 
     private void setIfAbsent(String key, String value) {
@@ -158,17 +169,12 @@ public class PdfChunkService {
 
         // ── [성능 측정] 조립 시간 ──
         Instant assemblyStart = Instant.now();
-        Path assembledPath = assembleChunks(uploadId, request.getTotalChunks());
+        PresentationFileType fileType = PresentationFileType.fromFileName(request.getFileName())
+            .orElseThrow(() -> new CustomException(PdfErrorCode.UNSUPPORTED_PRESENTATION_FILE));
+        Path assembledPath = assembleChunks(uploadId, request.getTotalChunks(), fileType);
         long assemblyMs = Duration.between(assemblyStart, Instant.now()).toMillis();
         log.info("[⏱ 성능] 청크 조립 완료: {}ms | 파일크기: {}", assemblyMs,
             formatBytes(getFileSize(assembledPath)));
-
-        // PDFBox 로 페이지 수만 빠르게 확인 (렌더링 없음, 수 ms 수준)
-        // 201 응답에 totalPages 를 포함해야 해서 동기적으로 처리합니다.
-        Instant pageCountStart = Instant.now();
-        int totalPages = countPdfPages(assembledPath, uploadId);
-        log.info("[⏱ 성능] 페이지 수 확인: {}ms | totalPages={}",
-            Duration.between(pageCountStart, Instant.now()).toMillis(), totalPages);
 
         String pdfId = generatePdfId();
 
@@ -181,6 +187,18 @@ public class PdfChunkService {
             log.error("[조립] Redis 메타데이터 누락 (세션 만료 가능성): uploadId={}", uploadId);
             throw new CustomException(PdfErrorCode.ASSEMBLY_FAILED);
         }
+
+        PreparedPresentation prepared = preparePresentationForParsing(assembledPath, fileType);
+        Path pdfPath = prepared.pdfPath();
+
+        // PDFBox 로 페이지 수만 빠르게 확인 (렌더링 없음, 수 ms 수준)
+        // 201 응답에 totalPages 를 포함해야 해서 동기적으로 처리합니다.
+        Instant pageCountStart = Instant.now();
+        int totalPages = countPdfPages(pdfPath, uploadId);
+        log.info("[⏱ 성능] 페이지 수 확인: {}ms | totalPages={}",
+            Duration.between(pageCountStart, Instant.now()).toMillis(), totalPages);
+
+        slideNoteService.replaceNotes(roomId, deckId, prepared.notes());
 
         // 방 생성 시 totalPage 는 placeholder(1)로 저장된다(프론트가 업로드 전 createRoom(1) 호출).
         // 실제 페이지 수가 확정된 지금 갱신하지 않으면, audience join 응답의 totalPages 가 1로 남아
@@ -198,7 +216,7 @@ public class PdfChunkService {
 
         // @Async: 즉시 반환됩니다. 실제 렌더링은 pdfParseExecutor 스레드풀에서 진행됩니다.
         // 렌더링 결과는 PdfSseRegistry 를 통해 프론트로 스트리밍됩니다.
-        pdfParseService.parseAndStream(pdfId, roomId, deckId, assembledPath, totalPages);
+        pdfParseService.parseAndStream(pdfId, roomId, deckId, pdfPath, totalPages);
 
         cleanupRedisKeys(uploadId); // Redis 에서 임시 메타 삭제 (임시 파일은 PdfParseService finally 에서 삭제)
 
@@ -216,22 +234,40 @@ public class PdfChunkService {
 
     /**
      * 저장된 청크 파일들을 순서대로 이어붙여 하나의 PDF 파일로 조립합니다.
-     * 저장 경로: {uploadDir}/assembled.pdf
+     * 저장 경로: {uploadDir}/source.{ext}
      * chunk_00000 → chunk_00001 → ... 순서대로 이어붙입니다.
      */
-    private Path assembleChunks(String uploadId, int totalChunks) {
+    private Path assembleChunks(String uploadId, int totalChunks, PresentationFileType fileType) {
         Path uploadDir = resolveUploadDir(uploadId);
-        Path assembledPath = uploadDir.resolve("assembled.pdf");
+        Path assembledPath = uploadDir.resolve("source." + fileType.extension());
         try (FileOutputStream out = new FileOutputStream(assembledPath.toFile())) {
             for (int i = 0; i < totalChunks; i++) {
                 Files.copy(resolveChunkPath(uploadId, i), out);
             }
-            log.info("[조립] PDF 파일 생성 완료: path={}", assembledPath);
+            log.info("[조립] 파일 생성 완료: path={}", assembledPath);
             return assembledPath;
         } catch (IOException e) {
             log.error("[조립] 청크 병합 실패: uploadId={}", uploadId, e);
             throw new CustomException(PdfErrorCode.ASSEMBLY_FAILED);
         }
+    }
+
+    private PreparedPresentation preparePresentationForParsing(Path assembledPath, PresentationFileType fileType) {
+        if (!fileType.requiresConversion()) {
+            return new PreparedPresentation(assembledPath, List.of());
+        }
+
+        List<SlideNoteDraft> notes = List.of();
+        try {
+            notes = slideNotesExtractionService.extract(assembledPath, fileType);
+        } catch (Exception e) {
+            log.warn("[PPT] 발표자 노트 추출 실패, 슬라이드 변환은 계속 진행: file={}", assembledPath, e);
+        }
+
+        return new PreparedPresentation(officeConversionService.convertToPdf(assembledPath), notes);
+    }
+
+    private record PreparedPresentation(Path pdfPath, List<SlideNoteDraft> notes) {
     }
 
     /**
@@ -257,6 +293,7 @@ public class PdfChunkService {
         redis.delete(metaKey(uploadId, "deckId"));
         redis.delete(metaKey(uploadId, "fileName"));
         redis.delete(metaKey(uploadId, "totalChunks"));
+        redis.delete(metaKey(uploadId, "fileType"));
     }
 
     // pdfId: "pdf-" + UUID 앞 12자리 (예: pdf-a1b2c3d4e5f6)

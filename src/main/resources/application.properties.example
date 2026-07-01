@@ -66,4 +66,8 @@ app.s3.cloudfront-domain=
 # app.jwt.presenter-ttl-hours=2
 # app.pdf.max-chunk-size-bytes=2097152
 # app.pdf.can-start-session-after-pages=10
+# app.office.soffice-path=soffice
+# macOS LibreOffice app install path:
+# app.office.soffice-path=/Applications/LibreOffice.app/Contents/MacOS/soffice
+# app.office.conversion-timeout-seconds=60
 # server.servlet.context-path=
