@@ -1,6 +1,8 @@
 package line4thon.boini.audience.question.service;
 
 import line4thon.boini.audience.question.dto.QuestionStatusEvent;
+import line4thon.boini.audience.question.dto.ClusterItem;
+import line4thon.boini.audience.question.dto.response.ClusterReportResponse;
 import line4thon.boini.audience.question.dto.response.CreateQuestionResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +19,7 @@ public class QuestionManageService {
 
   private final StringRedisTemplate redis;
   private final SimpMessagingTemplate broker;
+  private final ClusterBroadcaster clusterBroadcaster;
 
   /**
    * 질문을 완료 처리한다.
@@ -25,16 +28,17 @@ public class QuestionManageService {
    * - 청중/발표자에게 QUESTION_COMPLETED 이벤트 broadcast
    */
   public void complete(String roomId, String questionId) {
-    String hKey = "room:%s:question:%s".formatted(roomId, questionId);
-    redis.opsForHash().put(hKey, "status", "completed");
-    redis.opsForSet().add("room:" + roomId + ":questions:completed", questionId);
+    List<String> targetIds = resolveActionTargetIds(roomId, questionId);
+    for (String targetId : targetIds) {
+      String hKey = "room:%s:question:%s".formatted(roomId, targetId);
+      redis.opsForHash().put(hKey, "status", "completed");
+      redis.opsForSet().add("room:" + roomId + ":questions:completed", targetId);
+      broadcastStatus(roomId, QuestionStatusEvent.completed(targetId));
+    }
 
-    var evt = QuestionStatusEvent.completed(questionId);
-    String base = "/topic/p/" + roomId;
-    broker.convertAndSend(base + "/public", evt);
-    broker.convertAndSend(base + "/presenter", evt);
-
-    log.info("[QUESTION] 완료 처리 (roomId={}, questionId={})", roomId, questionId);
+    clusterBroadcaster.refreshAndBroadcast(roomId);
+    log.info("[QUESTION] 완료 처리 (roomId={}, requestedQuestionId={}, targetIds={})",
+        roomId, questionId, targetIds);
   }
 
   /**
@@ -44,16 +48,55 @@ public class QuestionManageService {
    * - 청중/발표자에게 QUESTION_DELETED 이벤트 broadcast → 실시간 채팅창에서 즉시 제거
    */
   public void delete(String roomId, String questionId) {
-    String hKey = "room:%s:question:%s".formatted(roomId, questionId);
-    redis.opsForHash().put(hKey, "status", "deleted");
-    redis.opsForSet().add("room:" + roomId + ":questions:deleted", questionId);
+    List<String> targetIds = resolveActionTargetIds(roomId, questionId);
+    for (String targetId : targetIds) {
+      String hKey = "room:%s:question:%s".formatted(roomId, targetId);
+      redis.opsForHash().put(hKey, "status", "deleted");
+      redis.opsForSet().add("room:" + roomId + ":questions:deleted", targetId);
+      redis.opsForSet().remove("room:" + roomId + ":questions:completed", targetId);
+      broadcastStatus(roomId, QuestionStatusEvent.deleted(targetId));
+    }
 
-    var evt = QuestionStatusEvent.deleted(questionId);
+    clusterBroadcaster.refreshAndBroadcast(roomId);
+    log.info("[QUESTION] 삭제 처리 (roomId={}, requestedQuestionId={}, targetIds={})",
+        roomId, questionId, targetIds);
+  }
+
+  private List<String> resolveActionTargetIds(String roomId, String questionId) {
+    ClusterReportResponse report = clusterBroadcaster.getCurrentClusters(roomId);
+    if (report == null || report.clusters() == null || report.clusters().isEmpty()) {
+      return List.of(questionId);
+    }
+
+    for (ClusterItem cluster : report.clusters()) {
+      List<String> ids = cluster.questionIds();
+      if (ids == null || ids.isEmpty() || !ids.contains(questionId)) {
+        continue;
+      }
+
+      if (isRepresentativeAction(cluster, questionId)) {
+        return new ArrayList<>(new LinkedHashSet<>(ids));
+      }
+
+      return List.of(questionId);
+    }
+
+    return List.of(questionId);
+  }
+
+  private boolean isRepresentativeAction(ClusterItem cluster, String questionId) {
+    if (questionId.equals(cluster.representativeQuestionId())) {
+      return true;
+    }
+
+    List<String> ids = cluster.questionIds();
+    return ids != null && !ids.isEmpty() && questionId.equals(ids.get(0));
+  }
+
+  private void broadcastStatus(String roomId, QuestionStatusEvent event) {
     String base = "/topic/p/" + roomId;
-    broker.convertAndSend(base + "/public", evt);
-    broker.convertAndSend(base + "/presenter", evt);
-
-    log.info("[QUESTION] 삭제 처리 (roomId={}, questionId={})", roomId, questionId);
+    broker.convertAndSend(base + "/public", event);
+    broker.convertAndSend(base + "/presenter", event);
   }
 
   /**
@@ -69,6 +112,7 @@ public class QuestionManageService {
     for (String qid : completedIds) {
       Map<Object, Object> h = redis.opsForHash().entries("room:%s:question:%s".formatted(roomId, qid));
       if (h == null || h.isEmpty()) continue;
+      if (!"completed".equals(h.get("status"))) continue;
       result.add(new CreateQuestionResponse(
           (String) h.get("id"),
           (String) h.get("roomId"),

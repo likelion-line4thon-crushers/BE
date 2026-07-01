@@ -42,6 +42,38 @@ public class ClusterBroadcaster {
     }
   }
 
+  public ClusterReportResponse refreshClusters(String roomId) {
+    try {
+      FastApiClusterResponse resp = fastApiWebClient.post()
+          .uri("/report/questions/rooms/{roomId}/clusters/refresh", roomId)
+          .retrieve()
+          .bodyToMono(FastApiClusterResponse.class)
+          .block(Duration.ofSeconds(10));
+
+      return (resp != null) ? resp.data() : null;
+    } catch (Exception e) {
+      log.warn("[CLUSTER] 상태 갱신 실패 (roomId={}): {}", roomId, e.getMessage());
+      return null;
+    }
+  }
+
+  public void broadcastClusters(String roomId, ClusterReportResponse report) {
+    if (report == null) return;
+    broker.convertAndSend(
+        "/topic/p/" + roomId + "/clusters",
+        ClusterEvent.updated(report)
+    );
+    log.info("[CLUSTER] 상태 broadcast 완료 (roomId={}, groups={})", roomId, report.uniqueGroups());
+  }
+
+  public void refreshAndBroadcast(String roomId) {
+    ClusterReportResponse report = refreshClusters(roomId);
+    if (report == null) {
+      report = getCurrentClusters(roomId);
+    }
+    broadcastClusters(roomId, report);
+  }
+
   @Async("clusterExecutor")
   public void broadcast(String roomId, QuestionInput input) {
     try {
@@ -53,10 +85,7 @@ public class ClusterBroadcaster {
           .block(Duration.ofSeconds(10));
 
       if (resp != null && resp.data() != null) {
-        broker.convertAndSend(
-            "/topic/p/" + roomId + "/clusters",
-            ClusterEvent.updated(resp.data())
-        );
+        broadcastClusters(roomId, resp.data());
         log.info("[CLUSTER] broadcast 완료 (roomId={}, groups={})",
             roomId, resp.data().uniqueGroups());
       }
