@@ -74,12 +74,13 @@ public class AiReportController {
     @Operation(
             summary = "재방문 수 가장 많은 슬라이드 반환",
             description = """
-          재방문 수가 가장 많은 슬라이드를 반환합니다.\n
-          `slide` : 재방문 수가 가장 많은 슬라이드 수\n
-          `totalRevisits` : 해당 슬라이드의 전체 방문 수\n
+          재방문한 청중 수가 가장 많은 슬라이드와 TOP 5 목록을 반환합니다.\n
+          `slide` : 재방문한 청중 수가 가장 많은 슬라이드 수\n
+          `totalRevisits` : 해당 슬라이드의 전체 재방문 횟수\n
           `totalAudienceCount` : 전체 청중 수\n
           `uniqueUsers` : 재방문한 청중 수\n
-          `multiRevisitUsers` : 2번 이상 재방문한 청중 수
+          `multiRevisitUsers` : 2번 이상 재방문한 청중 수\n
+          `top5` : 재방문한 청중 수 기준 상위 5개 슬라이드 목록
           """
     )
     @GetMapping("/{roomId}/mostRevisit")

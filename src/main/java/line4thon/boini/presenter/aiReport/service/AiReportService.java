@@ -7,6 +7,7 @@ import line4thon.boini.global.common.exception.CustomException;
 import line4thon.boini.presenter.aiReport.dto.response.MostReactionStickerResponse;
 import line4thon.boini.presenter.aiReport.dto.response.MostRevisitResponse;
 import line4thon.boini.presenter.aiReport.dto.response.ReportTopResponse;
+import line4thon.boini.presenter.aiReport.dto.response.RevisitSlideRankResponse;
 import line4thon.boini.presenter.aiReport.dto.response.RevisitResponse;
 import line4thon.boini.presenter.aiReport.exception.ReportErrorCode;
 import line4thon.boini.presenter.page.service.PageService;
@@ -104,29 +105,10 @@ public class AiReportService {
 
     public MostRevisitResponse getMostRevisit(String roomId) {
 
-        List<RevisitResponse> revisitList = getRevisit(roomId);
-
-        RevisitResponse most = revisitList.stream()
-                .max(Comparator.comparingInt(RevisitResponse::getRevisits))
-                .orElse(new RevisitResponse(0, 0));
-
-        int slide = most.getSlide();
-
-        String usersKey = "room:" + roomId + ":revisit:users:" + slide;
-
-        Long uniqueUsers = redisTemplate.opsForSet().size(usersKey);
-
-        int multiRevisitUsers = 0;
-        Set<String> users = redisTemplate.opsForSet().members(usersKey);
-        if (users != null) {
-            for (String user : users) {
-                String userCountKey = "room:" + roomId + ":revisit:user:" + slide + ":" + user;
-                String count = redisTemplate.opsForValue().get(userCountKey);
-                if (count != null && Integer.parseInt(count) >= 2) {
-                    multiRevisitUsers++;
-                }
-            }
-        }
+        List<RevisitSlideRankResponse> top5 = getTopRevisitSlides(roomId, 5);
+        RevisitSlideRankResponse most = top5.stream()
+                .findFirst()
+                .orElse(new RevisitSlideRankResponse(0, 0, 0, 0));
 
         String key4 = "room:" + roomId + ":enterAudienceCount";
         String countStr = redisTemplate.opsForValue().get(key4);
@@ -138,10 +120,56 @@ public class AiReportService {
 
 
         return MostRevisitResponse.builder()
-                .slide(slide)
-                .totalRevisits(most.getRevisits())
+                .slide(most.getSlideNumber())
+                .totalRevisits(most.getTotalRevisits())
                 .totalAudienceCount(totalAudienceCount)
-                .uniqueUsers(uniqueUsers != null ? uniqueUsers.intValue() : 0)
+                .uniqueUsers(most.getUniqueUsers())
+                .multiRevisitUsers(most.getMultiRevisitUsers())
+                .top5(top5)
+                .build();
+    }
+
+    public List<RevisitSlideRankResponse> getTopRevisitSlides(String roomId, int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+
+        List<RevisitResponse> revisitList = getRevisit(roomId);
+
+        return revisitList.stream()
+                .map(revisit -> toRevisitSlideRank(roomId, revisit))
+                .filter(rank -> rank.getUniqueUsers() > 0 || rank.getTotalRevisits() > 0)
+                .sorted(
+                        Comparator.comparingInt(RevisitSlideRankResponse::getUniqueUsers).reversed()
+                                .thenComparing(Comparator.comparingInt(RevisitSlideRankResponse::getTotalRevisits).reversed())
+                                .thenComparingInt(RevisitSlideRankResponse::getSlideNumber)
+                )
+                .limit(limit)
+                .toList();
+    }
+
+    private RevisitSlideRankResponse toRevisitSlideRank(String roomId, RevisitResponse revisit) {
+        int slide = revisit.getSlide();
+        String usersKey = "room:" + roomId + ":revisit:users:" + slide;
+
+        Set<String> users = redisTemplate.opsForSet().members(usersKey);
+        int uniqueUsers = users != null ? users.size() : 0;
+        int multiRevisitUsers = 0;
+
+        if (users != null) {
+            for (String user : users) {
+                String userCountKey = "room:" + roomId + ":revisit:user:" + slide + ":" + user;
+                String count = redisTemplate.opsForValue().get(userCountKey);
+                if (count != null && Integer.parseInt(count) >= 2) {
+                    multiRevisitUsers++;
+                }
+            }
+        }
+
+        return RevisitSlideRankResponse.builder()
+                .slideNumber(slide)
+                .uniqueUsers(uniqueUsers)
+                .totalRevisits(revisit.getRevisits())
                 .multiRevisitUsers(multiRevisitUsers)
                 .build();
     }
