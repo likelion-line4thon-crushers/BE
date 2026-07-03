@@ -26,6 +26,9 @@ import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 /**
  * PDF 청크 수신, 임시 저장, 조립을 담당하는 서비스.
@@ -60,6 +63,7 @@ public class PdfChunkService {
     private final OfficeConversionService officeConversionService;
     private final SlideNotesExtractionService slideNotesExtractionService;
     private final SlideNoteService slideNoteService;
+    private final S3Client s3Client;
 
     /**
      * 청크 하나를 수신하고 처리합니다. (ChunkUploadController 에서 호출)
@@ -199,6 +203,7 @@ public class PdfChunkService {
             Duration.between(pageCountStart, Instant.now()).toMillis(), totalPages);
 
         slideNoteService.replaceNotes(roomId, deckId, prepared.notes());
+        uploadDownloadablePdf(roomId, deckId, pdfPath, request.getFileName());
 
         // 방 생성 시 totalPage 는 placeholder(1)로 저장된다(프론트가 업로드 전 createRoom(1) 호출).
         // 실제 페이지 수가 확정된 지금 갱신하지 않으면, audience join 응답의 totalPages 가 1로 남아
@@ -230,6 +235,65 @@ public class PdfChunkService {
             .totalPages(totalPages)
             .streamUrl("/api/pdf/" + pdfId + "/stream") // 프론트가 SSE 구독할 URL
             .build());
+    }
+
+    private void uploadDownloadablePdf(String roomId, String deckId, Path pdfPath, String sourceFileName) {
+        String key = downloadablePdfKey(roomId, deckId);
+        try {
+            s3Client.putObject(
+                PutObjectRequest.builder()
+                    .bucket(props.getS3().getBucket())
+                    .key(key)
+                    .contentType("application/pdf")
+                    .build(),
+                RequestBody.fromFile(pdfPath)
+            );
+            redis.opsForValue().set(pdfDownloadS3Key(roomId), key);
+            redis.opsForValue().set(pdfDownloadFileNameKey(roomId), toPdfFileName(sourceFileName));
+            log.info("[PDF] 다운로드용 PDF 업로드 완료: roomId={}, key={}", roomId, key);
+        } catch (RuntimeException e) {
+            log.error("[PDF] 다운로드용 PDF 업로드 실패: roomId={}, key={}", roomId, key, e);
+            throw new CustomException(PdfErrorCode.ASSEMBLY_FAILED);
+        }
+    }
+
+    private String downloadablePdfKey(String roomId, String deckId) {
+        String root = normalizePrefix(props.getS3().getRootPrefix());
+        String path = "%s/%s/source.pdf".formatted(roomId, deckId);
+        return root.isEmpty() ? path : root + "/" + path;
+    }
+
+    private String toPdfFileName(String sourceFileName) {
+        if (sourceFileName == null || sourceFileName.isBlank()) {
+            return "boini-slides.pdf";
+        }
+
+        String fileName = sourceFileName.replace("\\", "/");
+        int slash = fileName.lastIndexOf('/');
+        if (slash >= 0) {
+            fileName = fileName.substring(slash + 1);
+        }
+
+        int dot = fileName.lastIndexOf('.');
+        String title = dot > 0 ? fileName.substring(0, dot) : fileName;
+        title = title.replaceAll("[\\p{Cntrl}\\\\/:*?\"<>|]+", "_").trim();
+
+        return title.isBlank() ? "boini-slides.pdf" : title + ".pdf";
+    }
+
+    private String normalizePrefix(String prefix) {
+        if (prefix == null || prefix.isBlank()) {
+            return "";
+        }
+        return prefix.replaceAll("^/+", "").replaceAll("/+$", "");
+    }
+
+    private String pdfDownloadS3Key(String roomId) {
+        return "room:" + roomId + ":pdfDownload:s3Key";
+    }
+
+    private String pdfDownloadFileNameKey(String roomId) {
+        return "room:" + roomId + ":pdfDownload:fileName";
     }
 
     /**

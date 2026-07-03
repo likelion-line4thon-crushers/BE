@@ -4,13 +4,17 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import line4thon.boini.audience.feedback.entity.FeedbackEntity;
+import line4thon.boini.audience.feedback.repository.FeedbackRepository;
 import line4thon.boini.audience.room.dto.request.LeaveRoomRequest;
 import line4thon.boini.audience.room.dto.response.JoinResponse;
 import line4thon.boini.audience.room.dto.response.LeaveRoomResponse;
 import line4thon.boini.audience.room.service.AudienceAuthService;
 import line4thon.boini.global.WsUrlResolver;
 import line4thon.boini.global.common.exception.CustomException;
+import line4thon.boini.global.common.exception.GlobalErrorCode;
 import line4thon.boini.global.common.response.BaseResponse;
+import line4thon.boini.global.config.AppProperties;
 import line4thon.boini.global.jwt.service.JwtService;
 import line4thon.boini.global.websocket.JwtHandshakeInterceptor;
 import line4thon.boini.presenter.aiReport.exception.ReportErrorCode;
@@ -21,16 +25,27 @@ import line4thon.boini.presenter.room.entity.SessionStatus;
 import line4thon.boini.presenter.room.service.CodeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
+import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import line4thon.boini.presenter.room.dto.request.CreateRoomRequest;
 import line4thon.boini.presenter.room.dto.request.RefreshPresenterTokenRequest;
 import line4thon.boini.presenter.room.service.PresenterAuthService;
 import line4thon.boini.presenter.room.service.RoomService;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 @Slf4j
@@ -48,6 +63,9 @@ public class RoomController {
   private final JwtHandshakeInterceptor jwtHandshakeInterceptor;
   private final JwtService jwtService;
   private final SimpMessagingTemplate messagingTemplate;
+  private final FeedbackRepository feedbackRepository;
+  private final S3Client s3Client;
+  private final AppProperties props;
 
   @Autowired
   private RedisTemplate<String, String> redisTemplate;
@@ -231,5 +249,134 @@ public class RoomController {
         "roomId", roomId,
         "status", status
     ));
+  }
+
+  @PatchMapping("/{roomId}/pdf-download-policy")
+  @Operation(
+      summary = "PDF 다운로드 허용 정책 변경",
+      description = """
+        발표자가 준비 화면에서 세션 종료 후 청중의 PDF 다운로드 허용 여부를 설정합니다.
+        """
+  )
+  public BaseResponse<Map<String, Boolean>> updatePdfDownloadPolicy(
+      @PathVariable String roomId,
+      @RequestBody Map<String, Boolean> request
+  ) {
+    boolean enabled = Boolean.TRUE.equals(request.get("enabled"));
+    return BaseResponse.success(Map.of(
+        "enabled", roomService.setPdfDownloadPolicy(roomId, enabled)
+    ));
+  }
+
+  @GetMapping("/{roomId}/pdf-download/availability")
+  @Operation(
+      summary = "청중별 PDF 다운로드 가능 여부 조회",
+      description = """
+        세션 종료, 발표자 허용 정책, 청중의 별점 및 주관식 피드백 제출 여부를 모두 확인합니다.
+        """
+  )
+  public BaseResponse<Map<String, Object>> pdfDownloadAvailability(
+      @PathVariable String roomId,
+      @RequestParam String audienceId
+  ) {
+    boolean enabled = roomService.isPdfDownloadEnabled(roomId);
+    boolean sessionEnded = roomService.getSessionStatus(roomId) == SessionStatus.ended;
+    boolean submittedFeedback = hasSubmittedWrittenFeedback(roomId, audienceId);
+    boolean hasFile = hasDownloadablePdf(roomId);
+
+    return BaseResponse.success(Map.of(
+        "enabled", enabled,
+        "sessionEnded", sessionEnded,
+        "submittedFeedback", submittedFeedback,
+        "hasFile", hasFile,
+        "canDownload", enabled && sessionEnded && submittedFeedback && hasFile
+    ));
+  }
+
+  @GetMapping("/{roomId}/pdf-download")
+  @Operation(
+      summary = "PDF 다운로드",
+      description = """
+        세션 종료 후 별점과 주관식 피드백을 모두 제출한 청중에게만 발표 자료 PDF를 다운로드합니다.
+        """
+  )
+  public ResponseEntity<InputStreamResource> downloadPdf(
+      @PathVariable String roomId,
+      @RequestParam String audienceId
+  ) {
+    if (!canDownloadPdf(roomId, audienceId)) {
+      throw new CustomException(GlobalErrorCode.FORBIDDEN);
+    }
+
+    String key = roomService.getPdfDownloadS3Key(roomId);
+    if (key == null || key.isBlank()) {
+      throw new CustomException(GlobalErrorCode.RESOURCE_NOT_FOUND);
+    }
+
+    try {
+      ResponseInputStream<GetObjectResponse> s3Object = s3Client.getObject(GetObjectRequest.builder()
+          .bucket(props.getS3().getBucket())
+          .key(key)
+          .build());
+
+      return ResponseEntity.ok()
+          .contentType(MediaType.APPLICATION_PDF)
+          .contentLength(s3Object.response().contentLength())
+          .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition(roomId))
+          .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, HttpHeaders.CONTENT_DISPOSITION)
+          .body(new InputStreamResource(s3Object));
+    } catch (S3Exception e) {
+      log.error("PDF 다운로드 S3 조회 실패: roomId={}, key={}", roomId, key, e);
+      throw new CustomException(e.statusCode() == 404
+          ? GlobalErrorCode.RESOURCE_NOT_FOUND
+          : GlobalErrorCode.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  private boolean canDownloadPdf(String roomId, String audienceId) {
+    return roomService.isPdfDownloadEnabled(roomId)
+        && roomService.getSessionStatus(roomId) == SessionStatus.ended
+        && hasSubmittedWrittenFeedback(roomId, audienceId)
+        && hasDownloadablePdf(roomId);
+  }
+
+  private boolean hasDownloadablePdf(String roomId) {
+    String key = roomService.getPdfDownloadS3Key(roomId);
+    return key != null && !key.isBlank();
+  }
+
+  private boolean hasSubmittedWrittenFeedback(String roomId, String audienceId) {
+    if (audienceId == null || audienceId.isBlank()) {
+      return false;
+    }
+
+    return feedbackRepository.findByRoomIdAndAudienceIdOrderByCreatedAtDesc(roomId, audienceId).stream()
+        .anyMatch(this::hasRatingAndWrittenFeedback);
+  }
+
+  private boolean hasRatingAndWrittenFeedback(FeedbackEntity feedback) {
+    return feedback.getRating() >= 1
+        && feedback.getRating() <= 5
+        && feedback.getComment() != null
+        && !feedback.getComment().isBlank();
+  }
+
+  private String contentDisposition(String roomId) {
+    String fileName = normalizeDownloadFileName(roomService.getPdfDownloadFileName(roomId));
+    String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
+    return "attachment; filename=\"boini-slides.pdf\"; filename*=UTF-8''" + encodedFileName;
+  }
+
+  private String normalizeDownloadFileName(String fileName) {
+    if (fileName == null || fileName.isBlank()) {
+      return "boini-slides.pdf";
+    }
+
+    String normalized = fileName.replaceAll("[\\p{Cntrl}\\\\/:*?\"<>|]+", "_").trim();
+    if (normalized.isBlank()) {
+      return "boini-slides.pdf";
+    }
+
+    return normalized.toLowerCase().endsWith(".pdf") ? normalized : normalized + ".pdf";
   }
 }
