@@ -36,6 +36,9 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
   private static final String ATTR_SUB    = "sub";
 
   private static final Pattern TOPIC_ROOM_DOT = Pattern.compile("^/(topic|queue)/room\\.(?<rid>[A-Za-z0-9\\-]+).*");
+  private static final Pattern P_ROOM_PATH     = Pattern.compile("^/(app|topic)/p/(?<rid>[A-Za-z0-9\\-]+)(/.*)?$");
+  private static final Pattern PRESENTATION_ROOM_PATH =
+      Pattern.compile("^/(app|topic)/presentation/(?<rid>[A-Za-z0-9\\-]+)(/.*)?$");
   private static final Pattern SLASH_ROOMS    = Pattern.compile("^/.*/rooms/(?<rid>[A-Za-z0-9\\-]+)(/.*)?$");
 
   private final JwtService jwt;
@@ -208,8 +211,12 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     if (destination == null) return null;
     Matcher m1 = TOPIC_ROOM_DOT.matcher(destination);
     if (m1.matches()) return m1.group("rid");
-    Matcher m2 = SLASH_ROOMS.matcher(destination);
+    Matcher m2 = P_ROOM_PATH.matcher(destination);
     if (m2.matches()) return m2.group("rid");
+    Matcher m3 = PRESENTATION_ROOM_PATH.matcher(destination);
+    if (m3.matches()) return m3.group("rid");
+    Matcher m4 = SLASH_ROOMS.matcher(destination);
+    if (m4.matches()) return m4.group("rid");
     return null;
   }
 

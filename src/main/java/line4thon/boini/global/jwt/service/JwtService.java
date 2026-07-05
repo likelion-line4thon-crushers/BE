@@ -32,6 +32,19 @@ public class JwtService {
         .compact();                                // 직렬화(String)
   }
 
+  public String issueAudienceToken(String roomId, String audienceId, Duration ttl) {
+    var now = Instant.now();
+    return Jwts.builder()
+        .setId(UUID.randomUUID().toString())
+        .setSubject(audienceId)
+        .setIssuedAt(Date.from(now))
+        .setExpiration(Date.from(now.plus(ttl)))
+        .claim("roomId", roomId)
+        .claim("role", "audience")
+        .signWith(key, SignatureAlgorithm.HS256)
+        .compact();
+  }
+
   public Claims parse(String token) {
     return Jwts.parserBuilder().setSigningKey(key).build()
         .parseClaimsJws(token).getBody();
