@@ -15,6 +15,7 @@ public class AppProperties {
   private Urls urls = new Urls();
   private S3 s3 = new S3();
   private Pdf pdf = new Pdf();
+  private Office office = new Office();
   private FastApi fastApi = new FastApi();
 
   @Getter @Setter
@@ -49,6 +50,12 @@ public class AppProperties {
     private String tempDir = System.getProperty("java.io.tmpdir") + "/boini-uploads";
     private long maxChunkSizeBytes = 2097152L; // 2MB
     private int canStartSessionAfterPages = 10;
+  }
+
+  @Getter @Setter
+  public static class Office {
+    private String sofficePath = "soffice";
+    private long conversionTimeoutSeconds = 60;
   }
 
   @Getter @Setter

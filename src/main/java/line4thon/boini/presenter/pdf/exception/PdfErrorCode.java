@@ -16,10 +16,12 @@ public enum PdfErrorCode implements BaseErrorCode {
 
     // 조립
     ASSEMBLY_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "P011", "PDF 조립에 실패했습니다."),
+    UNSUPPORTED_PRESENTATION_FILE(HttpStatus.BAD_REQUEST, "P012", "지원하지 않는 프레젠테이션 파일 형식입니다."),
 
     // 파싱
     PDF_PARSE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "P021", "PDF 파싱에 실패했습니다."),
-    PAGE_RENDER_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "P022", "페이지 렌더링에 실패했습니다.");
+    PAGE_RENDER_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "P022", "페이지 렌더링에 실패했습니다."),
+    OFFICE_CONVERSION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "P023", "PPT/PPTX 파일을 PDF로 변환하지 못했습니다.");
 
     private final HttpStatus status;
     private final String code;

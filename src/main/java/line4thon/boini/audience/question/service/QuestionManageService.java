@@ -119,11 +119,22 @@ public class QuestionManageService {
           Integer.parseInt((String) h.get("slide")),
           (String) h.get("audienceId"),
           (String) h.get("content"),
-          Long.parseLong((String) h.get("ts"))
+          Long.parseLong((String) h.get("ts")),
+          parseLikeCount(h)
       ));
     }
 
     result.sort(Comparator.comparingLong(CreateQuestionResponse::ts));
     return result;
+  }
+
+  private int parseLikeCount(Map<Object, Object> h) {
+    Object raw = h.get("likeCount");
+    if (raw == null) return 0;
+    try {
+      return Math.max(0, Integer.parseInt(String.valueOf(raw)));
+    } catch (NumberFormatException e) {
+      return 0;
+    }
   }
 }
