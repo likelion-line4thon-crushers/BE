@@ -110,14 +110,17 @@ public class RoomController {
     String key5 = "room:" + roomId + ":presenterPage";
     String presenterPage = redisTemplate.opsForValue().get(key5);
 
-    String key = "room:" + roomId + ":audience:online";
-
-    if(!Boolean.TRUE.equals(redisTemplate.opsForSet().isMember(key, issued.audienceId()))) {
-      String key4 = "room:" + roomId + ":enterAudienceCount";
-      redisTemplate.opsForValue().increment(key4);
+    // 누적 입장 수(리포트용): 최초 입장하는 audienceId 만 1회 카운트한다.
+    // presence(:audience:online)와 분리해 관리 — 현재 접속 수는 WS CONNECT/DISCONNECT 가 단독으로 다룬다.
+    String enteredKey = "room:" + roomId + ":audience:entered";
+    Long firstEnter = redisTemplate.opsForSet().add(enteredKey, issued.audienceId());
+    redisTemplate.expire(enteredKey, java.time.Duration.ofSeconds(props.getRoom().getTtlSeconds()));
+    if (firstEnter != null && firstEnter >= 1) {
+      redisTemplate.opsForValue().increment("room:" + roomId + ":enterAudienceCount");
     }
 
-    redisTemplate.opsForSet().add(key, issued.audienceId());
+    // 청중 수(:audience:online)는 소켓 연결 시점에 CONNECT 이벤트가 추가한다.
+    // join 시점엔 아직 소켓이 없으므로 online 에 넣지 않는다(소켓 미연결로 인한 카운트 누수 방지).
 
     String key2 = "room:" + roomId + ":slide:" + presenterPage;
     redisTemplate.opsForSet().add(key2, issued.audienceId());
@@ -138,14 +141,6 @@ public class RoomController {
     String slideUnlock = redisTemplate.opsForValue().get("room:" + roomId + ":option:slideUnlock");
 
     String sessionStatus = roomService.getSessionStatus(roomId).name();
-
-    Long audienceCountL = redisTemplate.opsForSet().size(key);
-    if (audienceCountL==null) {
-      audienceCountL=0L;
-    }
-
-    int audienceCount = audienceCountL.intValue();
-    messagingTemplate.convertAndSend("/topic/presentation/" + roomId + "/audienceCount", audienceCount);
 
     return BaseResponse.success(new JoinResponse(
         roomId,
@@ -172,22 +167,8 @@ public class RoomController {
           """
   )
   public BaseResponse<LeaveRoomResponse> leaveRoom(@PathVariable("roomId") String roomId, @RequestBody LeaveRoomRequest request) {
-
-
-    BaseResponse<LeaveRoomResponse> res = roomService.leaveRoom(roomId, request);
-
-    String key = "room:" + roomId + ":audience:online";
-    Long audienceCountL = redisTemplate.opsForSet().size(key);
-
-    if (audienceCountL==null) {
-      audienceCountL=0L;
-    }
-
-    int audienceCount = audienceCountL.intValue();
-
-    messagingTemplate.convertAndSend("/topic/presentation/" + roomId + "/audienceCount", audienceCount);
-    return res;
-
+    // leaveRoom 내부(forceRemoveAudience)에서 온라인/슬라이드 집합 정리 후 청중 수를 브로드캐스트한다
+    return roomService.leaveRoom(roomId, request);
   }
 
   @DeleteMapping("/close/{roomId}")
