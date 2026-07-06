@@ -10,7 +10,11 @@ import java.time.Instant;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "feedbacks")
+@Table(
+    name = "feedbacks",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uq_feedbacks_room_audience",
+        columnNames = {"roomId", "audienceId"}))
 public class FeedbackEntity {
 
   @Id

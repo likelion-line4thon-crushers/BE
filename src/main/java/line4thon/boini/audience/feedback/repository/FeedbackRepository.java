@@ -4,9 +4,13 @@ import java.util.List;
 import line4thon.boini.audience.feedback.entity.FeedbackEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public interface FeedbackRepository extends JpaRepository<FeedbackEntity, Long> {
   List<FeedbackEntity> findByRoomIdOrderByCreatedAtDesc(String roomId);
   List<FeedbackEntity> findByRoomIdAndAudienceIdOrderByCreatedAtDesc(String roomId, String audienceId);
+
+  @Transactional
+  void deleteByRoomIdAndAudienceId(String roomId, String audienceId);
 }
