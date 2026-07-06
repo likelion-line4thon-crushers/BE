@@ -66,4 +66,50 @@ public class ChatGptService {
       return "(요약 생성 중 오류)";
     }
   }
+
+  public String summarizeQuestionAnswers(String questionText, List<String> answers) {
+    if (answers == null || answers.isEmpty()) {
+      return "아직 답변이 없습니다.";
+    }
+
+    String joined = String.join("\n- ", answers);
+    String prompt = """
+        다음은 발표자가 청중에게 물어본 질문과 그에 대한 청중들의 답변입니다.
+
+        질문: %s
+
+        답변 목록:
+        - %s
+
+        위 답변들을 최대 3문장으로 간결하게 요약해주세요.
+        공통된 의견이나 눈에 띄는 반응이 있으면 포함해주세요.
+        """.formatted(questionText, joined);
+
+    try {
+      Map<String, Object> body = Map.of(
+          "model", "gpt-4o",
+          "messages", List.of(Map.of("role", "user", "content", prompt))
+      );
+
+      HttpHeaders headers = new HttpHeaders();
+      headers.setBearerAuth(apiKey);
+      headers.setContentType(MediaType.APPLICATION_JSON);
+
+      ResponseEntity<String> resp = restTemplate.postForEntity(
+          "https://api.openai.com/v1/chat/completions",
+          new HttpEntity<>(body, headers),
+          String.class
+      );
+
+      Map<?, ?> json = mapper.readValue(resp.getBody(), Map.class);
+      var choices = (List<Map<?, ?>>) json.get("choices");
+      if (choices == null || choices.isEmpty()) return "(요약 생성 실패)";
+      Map<?, ?> message = (Map<?, ?>) choices.get(0).get("message");
+      return (String) message.get("content");
+
+    } catch (Exception e) {
+      e.printStackTrace();
+      return "(요약 생성 중 오류)";
+    }
+  }
 }
