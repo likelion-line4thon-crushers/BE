@@ -273,29 +273,150 @@ public class RoomService {
   }
 
   public BaseResponse<LeaveRoomResponse> leaveRoom(String roomId, LeaveRoomRequest request){
-    String totalpage = redisTemplate.opsForValue().get("room:" + roomId + ":totalPage");
-    if (totalpage == null) {
-      throw new CustomException(ReportErrorCode.TOTAL_PAGE_NULL);
-    }
-    int slides = Integer.parseInt(totalpage);
-
-
-    for(int i = 1; i <= slides; i++) {
-      String key2 = "room:" + roomId + ":slide:1";
-
-      if(redisTemplate.opsForSet().isMember(key2, request.getAudienceId())) {
-        redisTemplate.opsForSet().remove(key2, request.getAudienceId());
-      }
-    }
-
-    String key = "room:" + roomId + ":audience:online";
-    redisTemplate.opsForSet().remove(key, request.getAudienceId());
+    // 명시적 "나가기": 해당 청중의 모든 연결/집계를 강제로 정리한다.
+    forceRemoveAudience(roomId, request.getAudienceId());
 
     return BaseResponse.success(new LeaveRoomResponse(
             roomId,
             request.getAudienceId(),
             request.getAudienceJWT()
     ));
+  }
+
+  // ---- 청중 온라인 상태(presence) 관리 ---------------------------------------
+  // presence 는 WebSocket 연결 생명주기에 종속된다.
+  //  - 온라인 집합(:audience:online) = 현재 접속 중인 audienceId 집합 (청중 수의 원천)
+  //  - 세션 집합(:audience:sessions:{audienceId}) = 해당 청중의 활성 WS 세션 id 집합
+  // 새로고침 시 이전 소켓의 DISCONNECT 와 새 소켓의 CONNECT 가 경쟁하더라도,
+  // "마지막 세션이 사라질 때만" 온라인 집합에서 제거하므로 청중 수가 잘못 줄지 않는다.
+
+  private String onlineKey(String roomId) {
+    return "room:" + roomId + ":audience:online";
+  }
+
+  private String sessionsKey(String roomId, String audienceId) {
+    return "room:" + roomId + ":audience:sessions:" + audienceId;
+  }
+
+  // wsSessionId -> "roomId|audienceId" 매핑. DISCONNECT 이벤트에서 세션 속성에 의존하지 않고
+  // wsSessionId 만으로 청중 신원을 복원하기 위한 역방향 인덱스.
+  private String connKey(String wsSessionId) {
+    return "ws:conn:" + wsSessionId;
+  }
+
+  /**
+   * WebSocket 연결(CONNECT) 시 호출. 청중의 WS 세션을 등록한다.
+   * 세션이 처음 등록되어 청중이 새로 온라인이 된 경우에만 청중 수를 브로드캐스트한다.
+   */
+  public void registerAudiencePresence(String roomId, String audienceId, String wsSessionId) {
+    if (roomId == null || audienceId == null || wsSessionId == null) {
+      return;
+    }
+
+    java.time.Duration ttl = java.time.Duration.ofSeconds(props.getRoom().getTtlSeconds());
+
+    // DISCONNECT 에서 사용할 역방향 매핑 저장 (CONNECT 시점엔 신원이 확실함)
+    redisTemplate.opsForValue().set(connKey(wsSessionId), roomId + "|" + audienceId, ttl);
+
+    String sessionsKey = sessionsKey(roomId, audienceId);
+    Long addedSession = redisTemplate.opsForSet().add(sessionsKey, wsSessionId);
+    redisTemplate.expire(sessionsKey, ttl);
+
+    if (addedSession == null || addedSession == 0) {
+      return; // 같은 세션의 중복 CONNECT → 아무 것도 하지 않음
+    }
+
+    Long addedOnline = redisTemplate.opsForSet().add(onlineKey(roomId), audienceId);
+    redisTemplate.expire(onlineKey(roomId), ttl); // 방 종료 누락 대비 안전망 TTL
+    if (addedOnline != null && addedOnline >= 1) {
+      broadcastAudienceCount(roomId);
+    }
+  }
+
+  /**
+   * WebSocket 연결 종료(DISCONNECT) 시 호출. wsSessionId 로 청중 신원을 복원해 세션을 해제한다.
+   * 청중의 마지막 세션이 사라진 경우에만 온라인 집합/슬라이드 집계에서 제거하고 브로드캐스트한다.
+   */
+  public void unregisterAudienceBySession(String wsSessionId) {
+    if (wsSessionId == null) {
+      return;
+    }
+
+    String mapping = redisTemplate.opsForValue().get(connKey(wsSessionId));
+    redisTemplate.delete(connKey(wsSessionId));
+    if (mapping == null) {
+      log.debug("[presence] DISCONNECT 매핑 없음(청중 아님/이미 처리): sessionId={}", wsSessionId);
+      return; // 청중 세션이 아니거나 이미 처리됨
+    }
+
+    int sep = mapping.indexOf('|');
+    if (sep < 0) {
+      return;
+    }
+    String roomId = mapping.substring(0, sep);
+    String audienceId = mapping.substring(sep + 1);
+
+    redisTemplate.opsForSet().remove(sessionsKey(roomId, audienceId), wsSessionId);
+
+    Long remaining = redisTemplate.opsForSet().size(sessionsKey(roomId, audienceId));
+    if (remaining != null && remaining > 0) {
+      log.debug("[presence] DISCONNECT 세션 해제(잔여 세션 있음): roomId={}, audienceId={}, 잔여={}",
+          roomId, audienceId, remaining);
+      return; // 다른 탭/세션이 아직 살아있음(새로고침 포함) → 온라인 유지
+    }
+
+    Long removedOnline = redisTemplate.opsForSet().remove(onlineKey(roomId), audienceId);
+    removeFromSlideSets(roomId, audienceId);
+    int count = currentOnlineCount(roomId);
+    log.debug("[presence] DISCONNECT 청중 오프라인: roomId={}, audienceId={}, removedOnline={}, 남은청중={}",
+        roomId, audienceId, removedOnline, count);
+    if (removedOnline != null && removedOnline >= 1) {
+      broadcastAudienceCount(roomId);
+    }
+  }
+
+  /** 명시적 퇴장: 청중의 모든 세션/집계를 제거하고 청중 수를 브로드캐스트한다. */
+  public void forceRemoveAudience(String roomId, String audienceId) {
+    if (roomId == null || audienceId == null) {
+      return;
+    }
+
+    // 이 청중의 모든 WS 세션에 대한 역방향 매핑까지 정리
+    java.util.Set<String> sessionIds = redisTemplate.opsForSet().members(sessionsKey(roomId, audienceId));
+    if (sessionIds != null) {
+      for (String sid : sessionIds) {
+        redisTemplate.delete(connKey(sid));
+      }
+    }
+
+    redisTemplate.delete(sessionsKey(roomId, audienceId));
+    redisTemplate.opsForSet().remove(onlineKey(roomId), audienceId);
+    removeFromSlideSets(roomId, audienceId);
+    broadcastAudienceCount(roomId);
+  }
+
+  private void removeFromSlideSets(String roomId, String audienceId) {
+    String totalpage = redisTemplate.opsForValue().get("room:" + roomId + ":totalPage");
+    if (totalpage == null) {
+      return;
+    }
+    try {
+      int slides = Integer.parseInt(totalpage);
+      for (int i = 1; i <= slides; i++) {
+        redisTemplate.opsForSet().remove("room:" + roomId + ":slide:" + i, audienceId);
+      }
+    } catch (NumberFormatException ignored) {
+      // totalPage 값이 손상된 경우 슬라이드 정리는 건너뛴다
+    }
+  }
+
+  private void broadcastAudienceCount(String roomId) {
+    broker.convertAndSend("/topic/presentation/" + roomId + "/audienceCount", currentOnlineCount(roomId));
+  }
+
+  public int currentOnlineCount(String roomId) {
+    Long size = redisTemplate.opsForSet().size(onlineKey(roomId));
+    return size == null ? 0 : size.intValue();
   }
 
   public void closeRoom(String roomId) {
@@ -306,5 +427,40 @@ public class RoomService {
       log.warn("ended 브로드캐스트 실패(삭제는 계속 진행): roomId={}, err={}", roomId, e.toString());
     }
 
+    try {
+      cleanupPresenceKeys(roomId);
+    } catch (Exception e) {
+      log.warn("presence 키 정리 실패: roomId={}, err={}", roomId, e.toString());
+    }
+  }
+
+  /** 방 종료 시 presence 관련 Redis 키(online, sessions:*, ws:conn:*, slide:*)를 정리한다. */
+  private void cleanupPresenceKeys(String roomId) {
+    java.util.Set<String> audienceIds = redisTemplate.opsForSet().members(onlineKey(roomId));
+    if (audienceIds != null) {
+      for (String audienceId : audienceIds) {
+        java.util.Set<String> sessionIds = redisTemplate.opsForSet().members(sessionsKey(roomId, audienceId));
+        if (sessionIds != null) {
+          for (String sid : sessionIds) {
+            redisTemplate.delete(connKey(sid));
+          }
+        }
+        redisTemplate.delete(sessionsKey(roomId, audienceId));
+      }
+    }
+
+    redisTemplate.delete(onlineKey(roomId));
+
+    String totalpage = redisTemplate.opsForValue().get("room:" + roomId + ":totalPage");
+    if (totalpage != null) {
+      try {
+        int slides = Integer.parseInt(totalpage);
+        for (int i = 1; i <= slides; i++) {
+          redisTemplate.delete("room:" + roomId + ":slide:" + i);
+        }
+      } catch (NumberFormatException ignored) {
+        // totalPage 손상 시 슬라이드 정리는 건너뛴다
+      }
+    }
   }
 }
