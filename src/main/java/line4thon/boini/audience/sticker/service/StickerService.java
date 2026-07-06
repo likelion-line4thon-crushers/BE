@@ -46,8 +46,33 @@ public class StickerService {
 
             objectRedisTemplate.opsForStream().add(key, fields);
 
-            String key3 = "room:" + sessionId + ":liveFeedback:slide:" + msg.getSlide();
+            processLiveFeedback(sessionId, msg);
 
+
+            StickerResponse response = StickerResponse.builder()
+                    .emoji(msg.getEmoji())
+                    .x(msg.getX())
+                    .y(msg.getY())
+                    .slide(msg.getSlide())
+                    .created_at(msg.getCreated_at())
+                    .build();
+
+
+
+            // 모든 구독자에게 브로드캐스트: /topic/presentation/{sessionId}
+            messagingTemplate.convertAndSend("/topic/presentation/" + sessionId + "/reactions", response);
+            log.info("스티커 부착 완료: roomId={}, emoji={}, x={}, y={}, slide={}, created_at={}", sessionId, msg.getEmoji(), msg.getX(), msg.getY(), msg.getSlide(), msg.getCreated_at());
+
+        } catch (Exception e){
+            log.error("스티커 부착 실패: roomId={}, err={}", sessionId, e.toString());
+            throw new CustomException(StickerErrorCode.NOT_SEND_REACTION_STICKER);
+        }
+
+    }
+
+    private void processLiveFeedback(String sessionId, StickerRequest msg) {
+        try {
+            String key3 = "room:" + sessionId + ":liveFeedback:slide:" + msg.getSlide();
 
             String key4 = "room:" + sessionId + ":liveFeedback:slide:" + msg.getSlide() + ":emoji:" + msg.getEmoji() + ":audience";
             redisTemplate.opsForSet().add(key4, msg.getAudienceID());
@@ -97,7 +122,7 @@ public class StickerService {
             redisTemplate.opsForHash().increment(key2, "emoji:"+msg.getEmoji(), 1);
 
             Object statusObj = redisTemplate.opsForHash().get(key3, "status");
-            String status = statusObj.toString();
+            String status = statusObj == null ? "" : statusObj.toString();
 
             if (!"FIRST".equals(status)) {
                 Long fieldCount = redisTemplate.opsForHash().size(key2);
@@ -145,28 +170,9 @@ public class StickerService {
 
                 }
             }
-
-
-
-            StickerResponse response = StickerResponse.builder()
-                    .emoji(msg.getEmoji())
-                    .x(msg.getX())
-                    .y(msg.getY())
-                    .slide(msg.getSlide())
-                    .created_at(msg.getCreated_at())
-                    .build();
-
-
-
-            // 모든 구독자에게 브로드캐스트: /topic/presentation/{sessionId}
-            messagingTemplate.convertAndSend("/topic/presentation/" + sessionId + "/reactions", response);
-            log.info("스티커 부착 완료: roomId={}, emoji={}, x={}, y={}, slide={}, created_at={}", sessionId, msg.getEmoji(), msg.getX(), msg.getY(), msg.getSlide(), msg.getCreated_at());
-
-        } catch (Exception e){
-            log.error("스티커 부착 실패: roomId={}, err={}", sessionId, e.toString());
-            throw new CustomException(StickerErrorCode.NOT_SEND_REACTION_STICKER);
+        } catch (Exception feedbackError) {
+            log.warn("라이브 피드백 처리 실패: roomId={}, err={}", sessionId, feedbackError.toString());
         }
-
     }
 
 }

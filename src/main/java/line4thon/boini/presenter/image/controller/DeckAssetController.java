@@ -2,6 +2,7 @@ package line4thon.boini.presenter.image.controller;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -10,10 +11,14 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import io.swagger.v3.oas.annotations.Operation;
 import line4thon.boini.global.common.response.BaseResponse;
+import line4thon.boini.presenter.image.dto.SlideNoteDto;
+import line4thon.boini.presenter.image.dto.request.UpdateSlideNoteRequest;
 import line4thon.boini.presenter.image.dto.response.OriginalUrlResponse;
+import line4thon.boini.presenter.image.dto.response.SlideNotesResponse;
 import line4thon.boini.presenter.image.dto.response.SlidesMetaResponse;
 import line4thon.boini.presenter.image.dto.response.UploadPagesResponse;
 import line4thon.boini.presenter.image.service.DeckAssetService;
+import line4thon.boini.presenter.image.service.SlideNoteService;
 
 @RestController
 @RequiredArgsConstructor
@@ -22,6 +27,7 @@ import line4thon.boini.presenter.image.service.DeckAssetService;
 public class DeckAssetController {
 
   private final DeckAssetService deckAssets;
+  private final SlideNoteService slideNoteService;
 
   @GetMapping("/{roomId}/{deckId}/pages/{page:\\d+}")
   @Operation(
@@ -93,5 +99,43 @@ public class DeckAssetController {
       @RequestParam @Min(1) int totalPages
   ) {
     return BaseResponse.success(deckAssets.getThumbnails(roomId, deckId, totalPages));
+  }
+
+  @GetMapping("/{roomId}/{deckId}/notes")
+  @Operation(
+      summary = "발표자용 슬라이드 노트 목록 조회",
+      description = """
+      PPT/PPTX 업로드 시 추출된 발표자 노트를 반환합니다.
+      - 발표자 JWT(`Authorization: Bearer ...`)가 필요합니다.
+      - 청중 클라이언트는 호출하지 않습니다.
+      """
+  )
+  public BaseResponse<SlideNotesResponse> notes(
+      @PathVariable String roomId,
+      @PathVariable String deckId,
+      @RequestHeader(value = "Authorization", required = false) String authorization
+  ) {
+    return BaseResponse.success(slideNoteService.getPresenterNotes(roomId, deckId, authorization));
+  }
+
+  @PutMapping("/{roomId}/{deckId}/notes/{page:\\d+}")
+  @Operation(
+      summary = "발표자용 슬라이드 노트 저장",
+      description = """
+      세션 시작 전 발표자가 슬라이드별 노트를 직접 저장합니다.
+      - 발표자 JWT(`Authorization: Bearer ...`)가 필요합니다.
+      - 세션이 시작된 뒤에는 읽기 전용입니다.
+      - 빈 문자열은 해당 슬라이드 노트를 삭제합니다.
+      """
+  )
+  public BaseResponse<SlideNoteDto> updateNote(
+      @PathVariable String roomId,
+      @PathVariable String deckId,
+      @PathVariable @Min(1) int page,
+      @Valid @RequestBody UpdateSlideNoteRequest request,
+      @RequestHeader(value = "Authorization", required = false) String authorization
+  ) {
+    String notes = request == null ? "" : request.getNotes();
+    return BaseResponse.success(slideNoteService.updatePresenterNote(roomId, deckId, page, notes, authorization));
   }
 }

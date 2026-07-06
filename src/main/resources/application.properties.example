@@ -1,0 +1,73 @@
+# ============================================================
+# BE(Spring) 설정 예시
+# 복사해서 사용:  cp application.properties.example application.properties
+#   (application.properties 는 gitignore 대상)
+# 출처: @Value / @ConfigurationProperties(prefix=app) 전수 확인
+# ============================================================
+
+spring.application.name=boini
+server.port=8080
+
+# ===== 파일 업로드(청크) =====
+# 프론트는 2MB 단위 청크 전송. Spring 기본 1MB면 청크마다 터지므로 상향.
+spring.servlet.multipart.max-file-size=10MB
+spring.servlet.multipart.max-request-size=15MB
+
+# ===== MySQL (필수) =====
+# 로컬 도커: localhost:3306 / db=boini / user=root
+spring.datasource.url=jdbc:mysql://localhost:3306/boini?serverTimezone=Asia/Seoul&characterEncoding=UTF-8&useSSL=false&allowPublicKeyRetrieval=true
+spring.datasource.username=root
+spring.datasource.password=changeme
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+
+# ===== JPA =====
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQLDialect
+
+# ===== Redis (필수) =====
+spring.data.redis.host=localhost
+spring.data.redis.port=6379
+
+# ===== JWT (필수, raw 문자열 최소 32바이트) =====
+app.jwt.secret=change-me-to-a-long-random-secret-at-least-32-bytes
+
+# ===== CORS (프론트 origin 정확히 일치, 콤마 구분) =====
+cors.allowed-origins=http://localhost:5173,http://localhost:5174,http://localhost:3000
+
+# ===== OpenAI (호출 기능 쓸 때만) =====
+OPENAI_API_KEY=
+
+# ===== FastAPI(AI 서버) 연동 =====
+app.fast-api.base-url=http://localhost:8000
+
+# ===== 프론트/WS URL (기본값 있음) =====
+app.urls.join-base=http://localhost:5173/j/
+app.urls.ws=ws://localhost:8080/ws
+
+# ===== S3 (PDF 페이지 이미지 업로드) =====
+# bucket/region 은 실제 값 필요. region 은 버킷 리전과 일치해야 함.
+app.s3.bucket=your-s3-bucket-name
+app.s3.region=ap-northeast-2
+app.s3.cloudfront-domain=
+# app.s3.presign-seconds=3600
+# app.s3.root-prefix=presentations
+
+# ============================================================
+# ⚠️ AWS 자격증명은 여기 넣지 않습니다 (AWS SDK 기본 자격증명 체인 사용).
+#    아래 둘 중 하나로 주입:
+#    1) 환경변수:  export AWS_ACCESS_KEY_ID=...  AWS_SECRET_ACCESS_KEY=...
+#    2) ~/.aws/credentials 의 [default] 프로파일
+# ============================================================
+
+# ===== 기타 (기본값 있어 보통 생략) =====
+# app.room.ttl-seconds=86400
+# app.jwt.presenter-ttl-hours=2
+# app.pdf.max-chunk-size-bytes=2097152
+# app.pdf.can-start-session-after-pages=10
+# app.office.soffice-path=soffice
+# macOS LibreOffice app install path:
+# app.office.soffice-path=/Applications/LibreOffice.app/Contents/MacOS/soffice
+# app.office.conversion-timeout-seconds=60
+# server.servlet.context-path=

@@ -1,17 +1,27 @@
 name: CD with Gradle
+
 on:
   push:
     branches: [ "main" ]
+
+# 연달아 push 되어도 배포가 겹치지 않도록 순차 실행
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
+          cache: 'gradle'   # 빌드 캐싱으로 속도 개선
+
       - name: Build with Gradle Wrapper
         run: |
           chmod 544 ./gradlew
@@ -27,13 +37,48 @@ jobs:
           source: "build/libs/*.jar"
           target: "/home/ubuntu/Boini/"
 
-      - name: docker compose up spring only # [수정] 전체 대신 spring만 재시작
+      - name: Deploy with health check & rollback (no actuator needed)
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ubuntu
           key: ${{ secrets.SSH_KEY }}
           script: |
+            set -e
             cd ~/Boini
-            docker compose up -d --build spring # [수정] spring 서비스만 재시작
-            docker image prune -f
+
+            # 1. 현재 실행 중인 이미지를 롤백용으로 태깅해둠
+            docker tag boini-spring:latest boini-spring:rollback 2>/dev/null || true
+
+            # 2. 새 이미지 빌드 & 재시작
+            docker compose up -d --build spring
+
+            # 3. 기동 대기 (최대 60초, 3초 간격)
+            #    - 스프링 부트 기동 완료 로그("Started BoiniApplication")가 찍혔는지
+            #    - 8080 포트가 실제로 TCP 응답하는지 (상태코드 무관, 000=연결실패만 아니면 OK)
+            echo "헬스체크 시작..."
+            SUCCESS=false
+            for i in $(seq 1 20); do
+              LOG_OK=$(docker logs spring-container --since 90s 2>&1 | grep -c "Started BoiniApplication" || true)
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/ --max-time 3 || echo "000")
+
+              if [ "$LOG_OK" -gt 0 ] && [ "$HTTP_CODE" != "000" ]; then
+                echo "헬스체크 성공 (${i}번째 시도, 응답코드: $HTTP_CODE)"
+                SUCCESS=true
+                break
+              fi
+              echo "대기 중... (${i}/20) 로그감지=$LOG_OK 응답코드=$HTTP_CODE"
+              sleep 3
+            done
+
+            if [ "$SUCCESS" = true ]; then
+              docker image prune -f
+              exit 0
+            fi
+
+            # 4. 헬스체크 실패 시 롤백
+            echo "헬스체크 실패 — 이전 버전으로 롤백합니다"
+            docker tag boini-spring:rollback boini-spring:latest
+            docker compose up -d --no-build spring
+            echo "롤백 완료. 배포는 실패로 처리됩니다."
+            exit 1

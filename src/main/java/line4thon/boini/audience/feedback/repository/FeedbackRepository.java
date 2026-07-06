@@ -8,4 +8,5 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface FeedbackRepository extends JpaRepository<FeedbackEntity, Long> {
   List<FeedbackEntity> findByRoomIdOrderByCreatedAtDesc(String roomId);
+  List<FeedbackEntity> findByRoomIdAndAudienceIdOrderByCreatedAtDesc(String roomId, String audienceId);
 }

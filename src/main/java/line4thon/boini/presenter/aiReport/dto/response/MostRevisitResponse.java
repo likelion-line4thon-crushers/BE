@@ -2,6 +2,8 @@ package line4thon.boini.presenter.aiReport.dto.response;
 
 import lombok.*;
 
+import java.util.List;
+
 @Getter
 @Setter
 @NoArgsConstructor
@@ -13,4 +15,5 @@ public class MostRevisitResponse {
     private int totalAudienceCount;
     private int uniqueUsers;
     private int multiRevisitUsers;
+    private List<RevisitSlideRankResponse> top5;
 }

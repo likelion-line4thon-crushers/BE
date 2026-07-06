@@ -32,8 +32,7 @@ public class AudienceAuthService {
       String audienceId = UUID.randomUUID().toString();
       long ttlSec = props.getRoom().getTtlSeconds();
 
-      String token = jwtService.issueJoinToken(
-          roomId, ROLE_AUDIENCE, Duration.ofSeconds(ttlSec));
+      String token = jwtService.issueAudienceToken(roomId, audienceId, Duration.ofSeconds(ttlSec));
 
       return new IssuedAudience(audienceId, token);
 

@@ -63,6 +63,18 @@ public class RoomService {
     return "room:" + roomId + ":session:status";
   }
 
+  private String pdfDownloadPolicyKey(String roomId) {
+    return "room:" + roomId + ":pdfDownload:enabled";
+  }
+
+  public String pdfDownloadS3Key(String roomId) {
+    return "room:" + roomId + ":pdfDownload:s3Key";
+  }
+
+  public String pdfDownloadFileNameKey(String roomId) {
+    return "room:" + roomId + ":pdfDownload:fileName";
+  }
+
   public void initSessionStatus(String roomId) {
     String key = sessionStatusKey(roomId);
     if (redisTemplate.opsForValue().get(key) == null) {
@@ -84,6 +96,23 @@ public class RoomService {
         "updatedAt", String.valueOf(System.currentTimeMillis())
     );
     broker.convertAndSend("/topic/p/" + roomId + "/public", evt);
+  }
+
+  public boolean setPdfDownloadPolicy(String roomId, boolean enabled) {
+    redisTemplate.opsForValue().set(pdfDownloadPolicyKey(roomId), String.valueOf(enabled));
+    return enabled;
+  }
+
+  public boolean isPdfDownloadEnabled(String roomId) {
+    return Boolean.parseBoolean(redisTemplate.opsForValue().get(pdfDownloadPolicyKey(roomId)));
+  }
+
+  public String getPdfDownloadS3Key(String roomId) {
+    return redisTemplate.opsForValue().get(pdfDownloadS3Key(roomId));
+  }
+
+  public String getPdfDownloadFileName(String roomId) {
+    return redisTemplate.opsForValue().get(pdfDownloadFileNameKey(roomId));
   }
 
   public CreateRoomResponse createRoom(CreateRoomRequest request, String wsUrl) {
@@ -118,6 +147,7 @@ public class RoomService {
     redisTemplate.opsForValue().set("room:"+roomId+":option:question", "true");
     redisTemplate.opsForValue().set("room:"+roomId+":option:feedback", "true");
     redisTemplate.opsForValue().set("room:"+roomId+":option:slideUnlock", "true");
+    redisTemplate.opsForValue().set(pdfDownloadPolicyKey(roomId), "false");
     redisTemplate.opsForValue().set("room:"+roomId+":maxSlide", "1");
 
     liveFeedbackService.initFeedbackHashes(roomId, request.getTotalPages());

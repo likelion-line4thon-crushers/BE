@@ -1,7 +1,9 @@
 package line4thon.boini.audience.question.service;
 
 import line4thon.boini.audience.question.dto.QuestionEvent;
+import line4thon.boini.audience.question.dto.QuestionLikeEvent;
 import line4thon.boini.audience.question.dto.requeset.CreateQuestionRequest;
+import line4thon.boini.audience.question.dto.requeset.QuestionLikeRequest;
 import line4thon.boini.audience.question.dto.requeset.QuestionInput;
 import line4thon.boini.audience.question.dto.response.CreateQuestionResponse;
 import line4thon.boini.audience.question.exception.AudienceQuestionErrorCode;
@@ -9,6 +11,7 @@ import line4thon.boini.global.common.exception.CustomException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.stream.StreamRecords;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
@@ -26,11 +29,35 @@ public class QuestionService {
   private final StringRedisTemplate redis;
   private final SimpMessagingTemplate broker;
   private static final long STREAM_MAXLEN = 10_000L;
+  private static final DefaultRedisScript<Long> LIKE_UPDATE_SCRIPT = new DefaultRedisScript<>(
+      """
+      if redis.call('EXISTS', KEYS[1]) == 0 then
+        return -1
+      end
+
+      local status = redis.call('HGET', KEYS[1], 'status')
+      if status ~= 'active' then
+        return -2
+      end
+
+      if ARGV[2] == 'true' then
+        redis.call('SADD', KEYS[2], ARGV[1])
+      else
+        redis.call('SREM', KEYS[2], ARGV[1])
+      end
+
+      local count = redis.call('SCARD', KEYS[2])
+      redis.call('HSET', KEYS[1], 'likeCount', tostring(count))
+      return count
+      """,
+      Long.class
+  );
   private final RedisTemplate<String, String> redisTemplate;
   private final ClusterBroadcaster clusterBroadcaster;
 
   public CreateQuestionResponse create(String roomId, CreateQuestionRequest request) {
 
+    ensureQuestionEnabled(roomId);
     rateLimit(roomId, request.audienceId());
 
     String id = genId();
@@ -51,6 +78,7 @@ public class QuestionService {
     h.put("content", request.content());
     h.put("ts", String.valueOf(ts));
     h.put("status", "active");
+    h.put("likeCount", "0");
 
     try {
       redis.opsForHash().putAll(hKey, h);
@@ -63,7 +91,16 @@ public class QuestionService {
       throw new CustomException(AudienceQuestionErrorCode.REDIS_ERROR);
     }
 
-    var response = new CreateQuestionResponse(id, roomId, request.slide(), request.audienceId(), request.content(), ts);
+    var response = new CreateQuestionResponse(
+        id,
+        roomId,
+        request.slide(),
+        request.audienceId(),
+        request.content(),
+        ts,
+        0,
+        false
+    );
     String base = "/topic/p/" + roomId;
     broker.convertAndSend(base + "/public",    QuestionEvent.created(response));     // 청중/발표자 공통
     broker.convertAndSend(base + "/presenter", QuestionEvent.created(response));     // 발표자 전용(권한)
@@ -94,8 +131,57 @@ public class QuestionService {
     return response;
   }
 
+  public QuestionLikeEvent updateLike(String roomId, QuestionLikeRequest request) {
+    String questionId = request.questionId();
+    String hKey = "room:%s:question:%s".formatted(roomId, questionId);
+    String likeSetKey = "room:%s:question:%s:likes".formatted(roomId, questionId);
 
-  public List<CreateQuestionResponse> listRoom(String roomId, Long fromTs, Integer slide) {
+    try {
+      Long count = redis.execute(
+          LIKE_UPDATE_SCRIPT,
+          List.of(hKey, likeSetKey),
+          request.audienceId(),
+          Boolean.TRUE.equals(request.liked()) ? "true" : "false"
+      );
+
+      if (count == null || count == -1L) {
+        log.warn("[QUESTION] 좋아요 대상 질문 없음 (roomId={}, questionId={})", roomId, questionId);
+        throw new CustomException(AudienceQuestionErrorCode.INVALID_QUESTION_ID);
+      }
+      if (count == -2L) {
+        log.warn("[QUESTION] 처리된 질문 좋아요 요청 차단 (roomId={}, questionId={})", roomId, questionId);
+        throw new CustomException(AudienceQuestionErrorCode.QUESTION_NOT_ACTIVE);
+      }
+
+      int likeCount = count.intValue();
+
+      QuestionLikeEvent event = QuestionLikeEvent.updated(
+          questionId,
+          request.audienceId(),
+          Boolean.TRUE.equals(request.liked()),
+          likeCount
+      );
+      broadcastLike(roomId, event);
+
+      log.info("[QUESTION] 좋아요 변경 (roomId={}, questionId={}, audienceId={}, liked={}, likeCount={})",
+          roomId, questionId, request.audienceId(), request.liked(), likeCount);
+      return event;
+    } catch (CustomException e) {
+      throw e;
+    } catch (Exception e) {
+      log.error("[REDIS] 질문 좋아요 처리 실패 (roomId={}, questionId={}, audienceId={})",
+          roomId, questionId, request.audienceId(), e);
+      throw new CustomException(AudienceQuestionErrorCode.REDIS_ERROR);
+    }
+  }
+
+
+  public List<CreateQuestionResponse> listRoom(
+      String roomId,
+      Long fromTs,
+      Integer slide,
+      String audienceId
+  ) {
     final String zRoom = "room:%s:questions".formatted(roomId);
 
     final double min = (fromTs == null) ? Double.NEGATIVE_INFINITY : Math.nextUp(fromTs.doubleValue());
@@ -139,12 +225,44 @@ public class QuestionService {
           s,
           (String) h.get("audienceId"),
           (String) h.get("content"),
-          ts
+          ts,
+          parseLikeCount(h),
+          isLikedByAudience(roomId, qid, audienceId)
       ));
     }
 
     result.sort(Comparator.comparingLong(CreateQuestionResponse::ts));
     return result;
+  }
+
+  private void broadcastLike(String roomId, QuestionLikeEvent event) {
+    String base = "/topic/p/" + roomId;
+    broker.convertAndSend(base + "/public", event);
+    broker.convertAndSend(base + "/presenter", event);
+  }
+
+  private int parseLikeCount(Map<Object, Object> h) {
+    Object raw = h.get("likeCount");
+    if (raw == null) return 0;
+    try {
+      return Math.max(0, Integer.parseInt(String.valueOf(raw)));
+    } catch (NumberFormatException e) {
+      return 0;
+    }
+  }
+
+  private boolean isLikedByAudience(String roomId, String questionId, String audienceId) {
+    if (audienceId == null || audienceId.isBlank()) return false;
+    String likeSetKey = "room:%s:question:%s:likes".formatted(roomId, questionId);
+    return Boolean.TRUE.equals(redis.opsForSet().isMember(likeSetKey, audienceId));
+  }
+
+  private void ensureQuestionEnabled(String roomId) {
+    String enabled = redisTemplate.opsForValue().get("room:%s:option:question".formatted(roomId));
+    if ("false".equalsIgnoreCase(enabled)) {
+      log.warn("[QUESTION] 비활성화된 질문 생성 요청 차단 (roomId={})", roomId);
+      throw new CustomException(AudienceQuestionErrorCode.QUESTION_DISABLED);
+    }
   }
 
   private String genId() {

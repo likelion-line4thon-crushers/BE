@@ -60,7 +60,9 @@ dependencies {
     implementation 'software.amazon.awssdk:s3:2.25.63'
     implementation 'net.coobird:thumbnailator:0.4.20'
     // WebP writer/reader
-    implementation 'org.sejda.imageio:webp-imageio:0.1.6'
+    // [수정] org.sejda 0.1.6은 x86_64 네이티브만 포함 → Apple Silicon(arm64)에서 UnsatisfiedLinkError.
+    //        arm64 네이티브를 포함한 usefulness 포크로 교체 (ImageIO SPI 동일, 드롭인).
+    implementation 'com.github.usefulness:webp-imageio:0.11.0'
 
     // (이미 있음) WebP 리더 등 확장 플러그인 - 읽기 위주지만 같이 둬도 충돌 없음
     implementation 'com.twelvemonkeys.imageio:imageio-webp:3.12.0'
@@ -76,6 +78,10 @@ dependencies {
 
     // PDF 파싱 (청크 조립 후 페이지별 이미지 변환)
     implementation 'org.apache.pdfbox:pdfbox:3.0.2'
+
+    // PPT/PPTX speaker notes extraction
+    implementation 'org.apache.poi:poi-ooxml:5.5.1'
+    implementation 'org.apache.poi:poi-scratchpad:5.5.1'
 
     // FastAPI 비동기 HTTP 호출용
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
