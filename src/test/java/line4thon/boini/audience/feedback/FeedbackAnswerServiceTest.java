@@ -1,6 +1,7 @@
 package line4thon.boini.audience.feedback;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
@@ -59,5 +60,14 @@ class FeedbackAnswerServiceTest {
   void blankAudienceIdRejected() {
     assertThatThrownBy(() -> service.submit("room1", req("  ", new AnswerItem(10L, "x"))))
         .isInstanceOf(CustomException.class);
+  }
+
+  @Test
+  void emptyAnswersAccepted() {
+    assertThatCode(() -> service.submit("room1", req("aud1"))).doesNotThrowAnyException();
+
+    FeedbackAnswersResponse resp = service.submit("room1", req("aud1"));
+    assertThat(resp.getAnswers()).isEmpty();
+    assertThat(repository.findByRoomIdAndAudienceId("room1", "aud1")).isEmpty();
   }
 }
