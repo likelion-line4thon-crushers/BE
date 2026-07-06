@@ -19,16 +19,18 @@ public class FeedbackAnswerService {
 
   private final FeedbackAnswerRepository repository;
 
+  /**
+   * @param audienceId 인증된 청중 토큰에서 추출한 신원 (요청 본문 값이 아님)
+   */
   @Transactional
-  public FeedbackAnswersResponse submit(String roomId, SubmitFeedbackAnswersRequest request) {
+  public FeedbackAnswersResponse submit(String roomId, String audienceId, SubmitFeedbackAnswersRequest request) {
     if (roomId == null || roomId.isBlank()) {
       throw new CustomException(FeedbackErrorCode.EMPTY_ROOM_ID);
     }
-    if (request.getAudienceId() == null || request.getAudienceId().isBlank()) {
+    if (audienceId == null || audienceId.isBlank()) {
       throw new CustomException(FeedbackErrorCode.EMPTY_ROOM_ID);
     }
 
-    String audienceId = request.getAudienceId();
     repository.deleteByRoomIdAndAudienceId(roomId, audienceId);
 
     List<AnswerItem> incoming = request.getAnswers() == null ? List.of() : request.getAnswers();

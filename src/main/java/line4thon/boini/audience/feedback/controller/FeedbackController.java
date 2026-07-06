@@ -1,6 +1,7 @@
 package line4thon.boini.audience.feedback.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
@@ -10,6 +11,7 @@ import line4thon.boini.audience.feedback.dto.request.CreateFeedbackRequest;
 import line4thon.boini.audience.feedback.dto.response.CreateFeedbackResponse;
 import line4thon.boini.audience.feedback.service.FeedbackService;
 import line4thon.boini.global.common.response.BaseResponse;
+import line4thon.boini.global.jwt.util.AudienceTokenResolver;
 
 @RestController
 @RequestMapping("/api/feedbacks")
@@ -18,6 +20,7 @@ import line4thon.boini.global.common.response.BaseResponse;
 public class FeedbackController {
 
   private final FeedbackService feedbackService;
+  private final AudienceTokenResolver audienceTokenResolver;
 
   @PostMapping("/rooms/{roomId}/feedbacks")
   @Operation(
@@ -31,9 +34,12 @@ public class FeedbackController {
   )
   public BaseResponse<CreateFeedbackResponse> createByPath(
       @PathVariable("roomId") String roomId,
-      @Valid @RequestBody CreateFeedbackRequest request
+      @Valid @RequestBody CreateFeedbackRequest request,
+      HttpServletRequest httpRequest
   ) {
-    var resp = feedbackService.write(roomId, request);
+    // 신원은 요청 본문이 아니라 입장 시 발급된 토큰에서 가져온다.
+    String audienceId = audienceTokenResolver.resolveAudienceId(httpRequest, roomId);
+    var resp = feedbackService.write(roomId, audienceId, request);
     return BaseResponse.success(resp);
   }
 }
