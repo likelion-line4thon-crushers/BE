@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import java.nio.charset.StandardCharsets;
 import line4thon.boini.audience.feedback.service.AudienceVoiceCsvService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -29,7 +30,10 @@ public class AudienceVoiceCsvController {
 
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(new MediaType("text", "csv", StandardCharsets.UTF_8));
-    headers.setContentDispositionFormData("attachment", "audience-voice-" + roomId + ".csv");
+    headers.setContentDisposition(
+        ContentDisposition.attachment()
+            .filename("audience-voice-" + roomId + ".csv", StandardCharsets.UTF_8)
+            .build());
     return ResponseEntity.ok().headers(headers).body(out);
   }
 }
