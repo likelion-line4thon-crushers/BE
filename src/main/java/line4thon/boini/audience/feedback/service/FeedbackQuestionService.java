@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class FeedbackQuestionService {
 
   private static final int MAX_QUESTIONS = 20;
+  private static final int MAX_QUESTION_LENGTH = 500;
 
   private final FeedbackQuestionRepository repository;
 
@@ -42,6 +43,10 @@ public class FeedbackQuestionService {
 
     if (cleaned.size() > MAX_QUESTIONS) {
       throw new CustomException(FeedbackErrorCode.TOO_MANY_QUESTIONS);
+    }
+
+    if (cleaned.stream().anyMatch(q -> q.getQuestionText().trim().length() > MAX_QUESTION_LENGTH)) {
+      throw new CustomException(FeedbackErrorCode.QUESTION_TOO_LONG);
     }
 
     repository.deleteByRoomId(roomId);

@@ -77,6 +77,13 @@ class FeedbackQuestionServiceTest {
   }
 
   @Test
+  void overLongQuestionRejected() {
+    String longText = "a".repeat(501);
+    assertThatThrownBy(() -> service.replace("room1", req(longText)))
+        .isInstanceOf(CustomException.class);
+  }
+
+  @Test
   void blankQuestionsAreDroppedAndReindexed() {
     FeedbackQuestionsResponse response = service.replace("room1", req("q1", "   ", "q2"));
 
