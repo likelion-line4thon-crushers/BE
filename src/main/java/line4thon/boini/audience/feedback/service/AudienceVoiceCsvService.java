@@ -69,8 +69,15 @@ public class AudienceVoiceCsvService {
 
   private String escape(String value) {
     if (value == null) return "";
-    boolean needsQuote = value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r");
-    String escaped = value.replace("\"", "\"\"");
+    String v = value;
+    if (!v.isEmpty()) {
+      char c = v.charAt(0);
+      if (c == '=' || c == '+' || c == '-' || c == '@' || c == '\t' || c == '\r') {
+        v = "'" + v;
+      }
+    }
+    boolean needsQuote = v.contains(",") || v.contains("\"") || v.contains("\n") || v.contains("\r");
+    String escaped = v.replace("\"", "\"\"");
     return needsQuote ? "\"" + escaped + "\"" : escaped;
   }
 }

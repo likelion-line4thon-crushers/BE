@@ -43,4 +43,19 @@ class AudienceVoiceCsvServiceTest {
     assertThat(lines[0]).isEqualTo("audienceId,rating,\"How, good?\",Why?");
     assertThat(lines[1]).isEqualTo("u1,4,\"said \"\"hi\"\"\",because");
   }
+
+  @Test
+  void neutralizesFormulaInjection() {
+    when(questionRepository.findByRoomIdOrderByOrderIndexAsc("r1")).thenReturn(List.of(
+        FeedbackQuestionEntity.builder().id(10L).roomId("r1").orderIndex(0).questionText("Comment").build()));
+    when(feedbackRepository.findByRoomIdOrderByCreatedAtDesc("r1")).thenReturn(List.of(
+        FeedbackEntity.builder().roomId("r1").audienceId("u1").rating(4).comment("").createdAt(Instant.now()).build()));
+    when(answerRepository.findByRoomId("r1")).thenReturn(List.of(
+        FeedbackAnswerEntity.builder().roomId("r1").audienceId("u1").questionId(10L).answerText("=SUM(A1)").createdAt(Instant.now()).build()));
+
+    String csv = service.buildCsv("r1");
+    String[] lines = csv.split("\r\n");
+
+    assertThat(lines[1]).isEqualTo("u1,4,'=SUM(A1)");
+  }
 }
