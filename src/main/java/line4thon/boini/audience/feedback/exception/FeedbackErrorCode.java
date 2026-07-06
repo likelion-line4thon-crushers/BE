@@ -12,7 +12,8 @@ public enum FeedbackErrorCode implements BaseErrorCode {
   INVALID_RATING(HttpStatus.BAD_REQUEST, "F001", "별점은 1~5 사이여야 합니다."),
   EMPTY_ROOM_ID(HttpStatus.BAD_REQUEST, "F002", "roomId가 전달되지 않았습니다."),
   SAVE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "F003", "후기 저장 중 오류가 발생했습니다."),
-  FETCH_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "F004", "후기 조회 중 오류가 발생했습니다.");
+  FETCH_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "F004", "후기 조회 중 오류가 발생했습니다."),
+  TOO_MANY_QUESTIONS(HttpStatus.BAD_REQUEST, "F005", "질문은 최대 20개까지 등록할 수 있습니다.");
 
   private final HttpStatus status;
   private final String code;
