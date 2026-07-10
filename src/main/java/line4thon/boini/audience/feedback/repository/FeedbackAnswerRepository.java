@@ -12,6 +12,8 @@ public interface FeedbackAnswerRepository extends JpaRepository<FeedbackAnswerEn
 
   List<FeedbackAnswerEntity> findByRoomIdAndAudienceId(String roomId, String audienceId);
 
+  boolean existsByRoomIdAndAudienceId(String roomId, String audienceId);
+
   @Transactional
   void deleteByRoomIdAndAudienceId(String roomId, String audienceId);
 }
