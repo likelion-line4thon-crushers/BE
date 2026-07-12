@@ -30,6 +30,14 @@ class PresentationFontAnalysisServiceTest {
     private InstalledFontProvider stub(Set<String> families) {
         return new InstalledFontProvider(new AppProperties()) {
             @Override public Set<String> installedFamilies() { return families; }
+            @Override public boolean isAvailable() { return true; }
+        };
+    }
+
+    private InstalledFontProvider unavailableStub() {
+        return new InstalledFontProvider(new AppProperties()) {
+            @Override public Set<String> installedFamilies() { return Set.of(); }
+            @Override public boolean isAvailable() { return false; }
         };
     }
 
@@ -46,6 +54,20 @@ class PresentationFontAnalysisServiceTest {
         FontEntry entry = new PresentationFontAnalysisService(stub(Set.of("arial")))
             .analyze(pptxWithFont("Arial")).stream()
             .filter(e -> e.name().equals("Arial")).findFirst().orElseThrow();
+        assertThat(entry.status()).isEqualTo(FontStatus.AVAILABLE);
+    }
+
+    @Test
+    void returnsEmptyWhenProviderUnavailable() throws Exception {
+        assertThat(new PresentationFontAnalysisService(unavailableStub())
+            .analyze(pptxWithFont("Malgun Gothic"))).isEmpty();
+    }
+
+    @Test
+    void marksExtraAvailableFontAvailable() throws Exception {
+        FontEntry entry = new PresentationFontAnalysisService(stub(Set.of()))
+            .analyze(pptxWithFont("Malgun Gothic"), Set.of(FontNames.normalize("Malgun Gothic"))).stream()
+            .filter(e -> e.name().equals("Malgun Gothic")).findFirst().orElseThrow();
         assertThat(entry.status()).isEqualTo(FontStatus.AVAILABLE);
     }
 }

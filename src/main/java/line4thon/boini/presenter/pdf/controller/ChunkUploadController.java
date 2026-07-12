@@ -66,9 +66,12 @@ public class ChunkUploadController {
 
         // 조립 완료 여부에 따라 HTTP 상태 코드 분기
         if (result.complete()) {
-            // 201: 모든 청크 수신 완료 → 프론트는 response.streamUrl 로 SSE 구독 시작
+            // 201: 모든 청크 수신 완료.
+            //  - needsFonts != null → AWAITING_FONTS 상태(폰트 업로드 필요)
+            //  - assembled          → READY 상태(프론트는 streamUrl 로 SSE 구독 시작)
+            Object body = result.needsFonts() != null ? result.needsFonts() : result.assembled();
             return ResponseEntity.status(HttpStatus.CREATED)
-                .body(BaseResponse.success(result.assembled()));
+                .body(BaseResponse.success(body));
         }
 
         // 200: 아직 수신 중 → 프론트는 나머지 청크 계속 전송

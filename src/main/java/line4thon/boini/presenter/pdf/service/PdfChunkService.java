@@ -2,6 +2,9 @@ package line4thon.boini.presenter.pdf.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.awt.Font;
+import java.awt.FontFormatException;
+import java.io.ByteArrayInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -10,8 +13,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import line4thon.boini.global.common.exception.CustomException;
 import line4thon.boini.global.config.AppProperties;
 import line4thon.boini.presenter.image.service.SlideNoteService;
@@ -25,6 +31,7 @@ import line4thon.boini.presenter.pdf.dto.response.NeedsFontsResponse;
 import line4thon.boini.presenter.pdf.exception.PdfErrorCode;
 import line4thon.boini.presenter.pdf.model.FontStatus;
 import line4thon.boini.presenter.pdf.model.PresentationFileType;
+import line4thon.boini.presenter.pdf.service.font.FontNames;
 import line4thon.boini.presenter.pdf.service.font.FontUploadValidator;
 import line4thon.boini.presenter.pdf.service.font.PresentationFontAnalysisService;
 import lombok.RequiredArgsConstructor;
@@ -444,13 +451,18 @@ public class PdfChunkService {
      * 저장 후 원본 파일을 재분석하여 갱신된 폰트 리포트를 반환합니다.
      */
     public List<FontEntry> storeFonts(String uploadId, List<MultipartFile> fonts) {
+        requireValidUploadId(uploadId);
         requireAwaitingFonts(uploadId);
-        if (fonts.size() > props.getFonts().getMaxCount()) {
-            throw new CustomException(PdfErrorCode.TOO_MANY_FONTS);
-        }
         Path fontDir = resolveUploadDir(uploadId).resolve("fonts");
+        // 업로드된 폰트의 패밀리명(정규화)을 모아 재분석 시 "사용 가능"으로 반영한다.
+        Set<String> uploadedNormalized = new HashSet<>();
         try {
             Files.createDirectories(fontDir);
+            // 개수 상한은 이번 배치만이 아니라 이미 저장된 파일까지 누적으로 검사한다.
+            long existingCount = countRegularFiles(fontDir);
+            if (existingCount + fonts.size() > props.getFonts().getMaxCount()) {
+                throw new CustomException(PdfErrorCode.TOO_MANY_FONTS);
+            }
             long total = directorySize(fontDir);
             for (MultipartFile font : fonts) {
                 byte[] bytes = font.getBytes();
@@ -460,13 +472,20 @@ public class PdfChunkService {
                     throw new CustomException(PdfErrorCode.FONT_UPLOAD_TOO_LARGE_TOTAL);
                 }
                 Files.write(fontDir.resolve(safeFontName(font.getOriginalFilename())), bytes);
+                String family = Font.createFont(Font.TRUETYPE_FONT, new ByteArrayInputStream(bytes)).getFamily();
+                uploadedNormalized.add(FontNames.normalize(family));
             }
         } catch (IOException e) {
             log.error("[Font] 폰트 저장 실패: uploadId={}", uploadId, e);
             throw new CustomException(PdfErrorCode.CHUNK_SAVE_FAILED);
+        } catch (FontFormatException e) {
+            // validate() 가 이미 폰트 유효성을 검사하므로 정상 경로에선 도달하지 않는다.
+            log.error("[Font] 폰트 패밀리 파싱 실패: uploadId={}", uploadId, e);
+            throw new CustomException(PdfErrorCode.INVALID_FONT_FILE);
         }
         String sourcePath = redis.opsForValue().get(sourcePathKey(uploadId));
-        return sourcePath == null ? List.of() : fontAnalysisService.analyze(Paths.get(sourcePath));
+        return sourcePath == null ? List.of()
+            : fontAnalysisService.analyze(Paths.get(sourcePath), uploadedNormalized);
     }
 
     /**
@@ -474,6 +493,7 @@ public class PdfChunkService {
      * proceedWithoutFonts=true 이면 발표자가 업로드한 폰트 없이(폰트 대체 없이) 변환을 진행합니다.
      */
     public AssemblyCompleteResponse finalize(String uploadId, boolean proceedWithoutFonts) {
+        requireValidUploadId(uploadId);
         requireAwaitingFonts(uploadId);
         String roomId = redis.opsForValue().get(metaKey(uploadId, "roomId"));
         String deckId = redis.opsForValue().get(metaKey(uploadId, "deckId"));
@@ -502,6 +522,24 @@ public class PdfChunkService {
         String state = redis.opsForValue().get(stateKey(uploadId));
         if (state == null) throw new CustomException(PdfErrorCode.UPLOAD_SESSION_NOT_FOUND);
         if (!"AWAITING_FONTS".equals(state)) throw new CustomException(PdfErrorCode.SESSION_NOT_AWAITING_FONTS);
+    }
+
+    // uploadId 는 파일시스템 경로와 fonts.conf XML 에 그대로 사용되므로, 위조된 값을 조기에 거부한다.
+    // 프론트는 uuidv4() 로 생성하므로 UUID 형식 검증은 안전하다.
+    private static final Pattern UPLOAD_ID_PATTERN = Pattern.compile(
+        "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+
+    private void requireValidUploadId(String uploadId) {
+        if (uploadId == null || !UPLOAD_ID_PATTERN.matcher(uploadId).matches()) {
+            throw new CustomException(PdfErrorCode.UPLOAD_SESSION_NOT_FOUND);
+        }
+    }
+
+    private long countRegularFiles(Path dir) throws IOException {
+        if (!Files.exists(dir)) return 0;
+        try (var s = Files.list(dir)) {
+            return s.filter(Files::isRegularFile).count();
+        }
     }
 
     private Path resolveExistingFontDir(String uploadId) {

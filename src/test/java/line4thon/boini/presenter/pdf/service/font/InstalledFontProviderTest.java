@@ -19,11 +19,14 @@ class InstalledFontProviderTest {
         InstalledFontProvider provider =
             new FakeProvider(props, "Arial\nNoto Sans CJK KR,Noto Sans CJK KR Bold\n", Path.of("/usr/bin/fc-list"));
         assertThat(provider.installedFamilies()).contains("arial", "noto sans cjk kr");
+        assertThat(provider.isAvailable()).isTrue();
     }
 
     @Test
     void returnsEmptyWhenBinaryMissing() {
-        assertThat(new FakeProvider(new AppProperties(), "", null).installedFamilies()).isEmpty();
+        InstalledFontProvider provider = new FakeProvider(new AppProperties(), "", null);
+        assertThat(provider.installedFamilies()).isEmpty();
+        assertThat(provider.isAvailable()).isFalse();
     }
 
     private static class FakeProvider extends InstalledFontProvider {

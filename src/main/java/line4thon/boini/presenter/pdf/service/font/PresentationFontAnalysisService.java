@@ -18,6 +18,19 @@ public class PresentationFontAnalysisService {
     private final InstalledFontProvider installedFontProvider;
 
     public List<FontEntry> analyze(Path pptx) {
+        return analyze(pptx, Set.of());
+    }
+
+    /**
+     * @param extraAvailableNormalized 설치 폰트 외에 추가로 사용 가능하다고 볼 폰트(정규화된 패밀리명).
+     *                                 발표자가 업로드한 폰트를 리포트에 반영하기 위해 사용된다.
+     */
+    public List<FontEntry> analyze(Path pptx, Set<String> extraAvailableNormalized) {
+        // fc-list 를 실행할 수 없으면 설치 폰트를 알 수 없으므로 누락 판단을 건너뛴다.
+        // (빈 리스트 → 상위에서 "누락 없음"으로 처리되어 변환 빠른 경로로 진행)
+        if (!installedFontProvider.isAvailable()) {
+            return List.of();
+        }
         try {
             PptxFontReferences.Result refs = PptxFontReferences.read(pptx);
             Set<String> installed = installedFontProvider.installedFamilies();
@@ -28,7 +41,7 @@ public class PresentationFontAnalysisService {
             for (String name : refs.referenced()) {
                 String norm = FontNames.normalize(name);
                 boolean embedded = embeddedNorm.contains(norm);
-                boolean isInstalled = installed.contains(norm);
+                boolean isInstalled = installed.contains(norm) || extraAvailableNormalized.contains(norm);
                 FontStatus status = (embedded || isInstalled) ? FontStatus.AVAILABLE : FontStatus.MISSING;
                 report.add(new FontEntry(name, status, embedded, isInstalled));
             }
