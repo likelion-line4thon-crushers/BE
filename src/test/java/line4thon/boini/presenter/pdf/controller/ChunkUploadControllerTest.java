@@ -2,6 +2,8 @@ package line4thon.boini.presenter.pdf.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -46,10 +48,11 @@ class ChunkUploadControllerTest {
     void uploadChunkReturns201WithNeedsFontsBody() throws Exception {
         when(pdfChunkService.receiveChunk(any())).thenReturn(
             ChunkUploadResult.needsFonts(NeedsFontsResponse.of(
-                "u1", List.of(new FontEntry("Malgun Gothic", FontStatus.MISSING, false, false)))));
+                "11111111-1111-1111-1111-111111111111",
+                List.of(new FontEntry("Malgun Gothic", FontStatus.MISSING, false, false)))));
         mvc.perform(multipart("/api/upload/chunk")
                 .file(new MockMultipartFile("chunk", "c.bin", "application/octet-stream", new byte[] {1}))
-                .param("uploadId", "u1")
+                .param("uploadId", "11111111-1111-1111-1111-111111111111")
                 .param("roomId", "r1")
                 .param("deckId", "d1")
                 .param("chunkIndex", "0")
@@ -59,6 +62,22 @@ class ChunkUploadControllerTest {
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.data.status").value("NEEDS_FONTS"))
             .andExpect(jsonPath("$.data.fontReport").isNotEmpty());
+    }
+
+    @Test
+    void uploadChunkRejectsMalformedUploadIdBeforeServiceCall() throws Exception {
+        mvc.perform(multipart("/api/upload/chunk")
+                .file(new MockMultipartFile("chunk", "c.bin", "application/octet-stream", new byte[] {1}))
+                .param("uploadId", "../../../etc/evil")
+                .param("roomId", "r1")
+                .param("deckId", "d1")
+                .param("chunkIndex", "0")
+                .param("totalChunks", "1")
+                .param("fileName", "deck.pptx")
+                .param("fileSize", "1"))
+            .andExpect(status().isBadRequest());
+
+        verify(pdfChunkService, never()).receiveChunk(any());
     }
 
     @Test
