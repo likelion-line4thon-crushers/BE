@@ -218,8 +218,10 @@ public class PdfChunkService {
         boolean hasMissing = report.stream().anyMatch(e -> e.status() == FontStatus.MISSING);
 
         if (hasMissing) {
-            List<String> missing = report.stream()
-                .filter(e -> e.status() == FontStatus.MISSING).map(FontEntry::name).toList();
+            // 프론트에는 "필요한(누락된) 폰트"만 내려준다. 이미 있는 폰트는 목록에 넣지 않는다.
+            List<FontEntry> requiredFonts = report.stream()
+                .filter(e -> e.status() == FontStatus.MISSING).toList();
+            List<String> missing = requiredFonts.stream().map(FontEntry::name).toList();
             try {
                 redis.opsForValue().set(stateKey(uploadId), "AWAITING_FONTS", UPLOAD_SESSION_TTL);
                 redis.opsForValue().set(missingFontsKey(uploadId),
@@ -230,7 +232,7 @@ public class PdfChunkService {
             }
             // meta 와 조립된 파일은 finalize 에서 재사용하므로 cleanupRedisKeys 를 호출하지 않습니다.
             log.info("[조립] 폰트 대기 상태 전환: uploadId={}, missing={}", uploadId, missing);
-            return ChunkUploadResult.needsFonts(NeedsFontsResponse.of(uploadId, report));
+            return ChunkUploadResult.needsFonts(NeedsFontsResponse.of(uploadId, requiredFonts));
         }
 
         AssemblyCompleteResponse response = convertSeedAndParse(
