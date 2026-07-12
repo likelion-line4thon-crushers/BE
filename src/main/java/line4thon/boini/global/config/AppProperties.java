@@ -67,7 +67,7 @@ public class AppProperties {
 
   @Getter @Setter
   public static class Fonts {
-    private long maxFileBytes = 5_242_880L;   // 5 MB per font
+    private long maxFileBytes = 20_971_520L;  // 20 MB per font
     private int maxCount = 20;
     private long maxTotalBytes = 52_428_800L; // 50 MB per deck
   }

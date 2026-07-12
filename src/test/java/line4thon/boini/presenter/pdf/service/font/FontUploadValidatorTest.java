@@ -19,7 +19,7 @@ class FontUploadValidatorTest {
 
     @Test
     void rejectsOversizeFile() {
-        assertThatThrownBy(() -> validator.validate("big.ttf", new byte[6 * 1024 * 1024]))
+        assertThatThrownBy(() -> validator.validate("big.ttf", new byte[21 * 1024 * 1024]))
             .isInstanceOf(CustomException.class);
     }
 

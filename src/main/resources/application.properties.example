@@ -10,8 +10,9 @@ server.port=8080
 
 # ===== 파일 업로드(청크) =====
 # 프론트는 2MB 단위 청크 전송. Spring 기본 1MB면 청크마다 터지므로 상향.
+# 폰트 파일 1개는 최대 20MB(app.fonts.max-file-bytes)이므로 max-file-size 를 25MB 로 둔다.
 # 폰트 업로드는 한 요청에 최대 50MB(app.fonts.max-total-bytes)까지 오므로 request 상한을 60MB 로 둔다.
-spring.servlet.multipart.max-file-size=10MB
+spring.servlet.multipart.max-file-size=25MB
 spring.servlet.multipart.max-request-size=60MB
 
 # ===== MySQL (필수) =====
@@ -72,7 +73,7 @@ app.s3.cloudfront-domain=
 # macOS LibreOffice app install path:
 # app.office.soffice-path=/Applications/LibreOffice.app/Contents/MacOS/soffice
 # app.office.conversion-timeout-seconds=60
-# app.fonts.max-file-bytes=5242880
+# app.fonts.max-file-bytes=20971520
 # app.fonts.max-count=20
 # app.fonts.max-total-bytes=52428800
 # server.servlet.context-path=
