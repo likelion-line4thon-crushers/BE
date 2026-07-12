@@ -2,8 +2,12 @@ package line4thon.boini.presenter.pdf.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
+import java.util.List;
 import line4thon.boini.global.common.response.BaseResponse;
+import line4thon.boini.presenter.pdf.dto.FontEntry;
 import line4thon.boini.presenter.pdf.dto.request.ChunkUploadRequest;
+import line4thon.boini.presenter.pdf.dto.request.FinalizeRequest;
+import line4thon.boini.presenter.pdf.dto.response.AssemblyCompleteResponse;
 import line4thon.boini.presenter.pdf.dto.response.ChunkUploadResult;
 import line4thon.boini.presenter.pdf.service.PdfChunkService;
 import lombok.RequiredArgsConstructor;
@@ -11,9 +15,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * PDF 청크 단위 업로드 컨트롤러.
@@ -65,5 +73,22 @@ public class ChunkUploadController {
 
         // 200: 아직 수신 중 → 프론트는 나머지 청크 계속 전송
         return ResponseEntity.ok(BaseResponse.success(result.progress()));
+    }
+
+    @PostMapping(value = "/{uploadId}/fonts", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "폰트 업로드", description = "AWAITING_FONTS 상태의 업로드 세션에 폰트 파일을 추가합니다.")
+    public ResponseEntity<BaseResponse<?>> uploadFonts(
+        @PathVariable String uploadId, @RequestParam("fonts") List<MultipartFile> fonts) {
+        List<FontEntry> report = pdfChunkService.storeFonts(uploadId, fonts);
+        return ResponseEntity.ok(BaseResponse.success(report));
+    }
+
+    @PostMapping(value = "/{uploadId}/finalize", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "변환 확정", description = "업로드한 폰트로 PDF 변환/파싱을 시작합니다.")
+    public ResponseEntity<BaseResponse<?>> finalizeUpload(
+        @PathVariable String uploadId, @RequestBody(required = false) FinalizeRequest request) {
+        boolean proceed = request != null && request.isProceedWithoutFonts();
+        AssemblyCompleteResponse response = pdfChunkService.finalize(uploadId, proceed);
+        return ResponseEntity.status(HttpStatus.CREATED).body(BaseResponse.success(response));
     }
 }
