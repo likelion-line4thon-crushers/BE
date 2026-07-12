@@ -29,6 +29,20 @@ class InstalledFontProviderTest {
         assertThat(provider.isAvailable()).isFalse();
     }
 
+    @Test
+    void substituteForReturnsFirstMatchedFamily() {
+        AppProperties props = new AppProperties();
+        props.getOffice().setFcMatchPath("/usr/bin/fc-match");
+        InstalledFontProvider provider =
+            new FakeProvider(props, "Noto Sans CJK KR,Noto Sans CJK KR Bold\n", Path.of("/usr/bin/fc-match"));
+        assertThat(provider.substituteFor("Malgun Gothic")).isEqualTo("Noto Sans CJK KR");
+    }
+
+    @Test
+    void substituteForReturnsNullWhenBinaryMissing() {
+        assertThat(new FakeProvider(new AppProperties(), "", null).substituteFor("Malgun Gothic")).isNull();
+    }
+
     private static class FakeProvider extends InstalledFontProvider {
         private final String output; private final Path executable;
         FakeProvider(AppProperties props, String output, Path executable) {

@@ -31,6 +31,7 @@ class PresentationFontAnalysisServiceTest {
         return new InstalledFontProvider(new AppProperties()) {
             @Override public Set<String> installedFamilies() { return families; }
             @Override public boolean isAvailable() { return true; }
+            @Override public String substituteFor(String family) { return null; }
         };
     }
 
@@ -69,5 +70,19 @@ class PresentationFontAnalysisServiceTest {
             .analyze(pptxWithFont("Malgun Gothic"), Set.of(FontNames.normalize("Malgun Gothic"))).stream()
             .filter(e -> e.name().equals("Malgun Gothic")).findFirst().orElseThrow();
         assertThat(entry.status()).isEqualTo(FontStatus.AVAILABLE);
+    }
+
+    @Test
+    void populatesSubstituteForMissingFont() throws Exception {
+        InstalledFontProvider provider = new InstalledFontProvider(new AppProperties()) {
+            @Override public Set<String> installedFamilies() { return Set.of(); }
+            @Override public boolean isAvailable() { return true; }
+            @Override public String substituteFor(String family) { return "Noto Sans CJK KR"; }
+        };
+        FontEntry entry = new PresentationFontAnalysisService(provider)
+            .analyze(pptxWithFont("Malgun Gothic")).stream()
+            .filter(e -> e.name().equals("Malgun Gothic")).findFirst().orElseThrow();
+        assertThat(entry.status()).isEqualTo(FontStatus.MISSING);
+        assertThat(entry.substitute()).isEqualTo("Noto Sans CJK KR");
     }
 }

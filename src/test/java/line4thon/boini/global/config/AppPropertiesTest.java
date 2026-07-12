@@ -8,8 +8,9 @@ class AppPropertiesTest {
     void fontDefaults() {
         AppProperties props = new AppProperties();
         assertThat(props.getOffice().getFcListPath()).isEqualTo("fc-list");
-        assertThat(props.getFonts().getMaxFileBytes()).isEqualTo(20_971_520L);
+        assertThat(props.getOffice().getFcMatchPath()).isEqualTo("fc-match");
+        assertThat(props.getFonts().getMaxFileBytes()).isEqualTo(15_728_640L);
         assertThat(props.getFonts().getMaxCount()).isEqualTo(20);
-        assertThat(props.getFonts().getMaxTotalBytes()).isEqualTo(52_428_800L);
+        assertThat(props.getFonts().getMaxTotalBytes()).isEqualTo(62_914_560L);
     }
 }

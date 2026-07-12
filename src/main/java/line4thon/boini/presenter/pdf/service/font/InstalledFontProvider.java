@@ -40,6 +40,35 @@ public class InstalledFontProvider {
         return current().available();
     }
 
+    /**
+     * fc-match 로, 요청한 패밀리가 설치돼 있지 않을 때 실제 렌더링에 사용될 대체 폰트 패밀리명을 반환한다.
+     * 바이너리가 없거나 실패하면 null.
+     */
+    public String substituteFor(String family) {
+        if (family == null || family.isBlank()) return null;
+        Path binary = resolveBinary(props.getOffice().getFcMatchPath());
+        if (binary == null) return null;
+        try {
+            ProcessBuilder builder = new ProcessBuilder(List.of(binary.toString(), "--format=%{family}", family));
+            Process process = start(builder);
+            String out;
+            try (BufferedReader r = new BufferedReader(
+                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                out = r.readLine();
+            }
+            process.waitFor();
+            if (out == null || out.isBlank()) return null;
+            String first = out.split(",")[0].trim();
+            return first.isEmpty() ? null : first;
+        } catch (IOException e) {
+            log.warn("[Font] fc-match 실행 실패: family={}", family, e);
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+    }
+
     private Query current() {
         Query snap = cached;
         if (snap != null && Duration.between(cachedAt, Instant.now()).compareTo(CACHE_TTL) < 0) return snap;

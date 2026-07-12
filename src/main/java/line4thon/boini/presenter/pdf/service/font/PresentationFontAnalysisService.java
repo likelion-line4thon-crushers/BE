@@ -43,7 +43,10 @@ public class PresentationFontAnalysisService {
                 boolean embedded = embeddedNorm.contains(norm);
                 boolean isInstalled = installed.contains(norm) || extraAvailableNormalized.contains(norm);
                 FontStatus status = (embedded || isInstalled) ? FontStatus.AVAILABLE : FontStatus.MISSING;
-                report.add(new FontEntry(name, status, embedded, isInstalled));
+                String substitute = status == FontStatus.MISSING
+                    ? installedFontProvider.substituteFor(name)
+                    : null;
+                report.add(new FontEntry(name, status, embedded, isInstalled, substitute));
             }
             return report;
         } catch (Exception e) {
