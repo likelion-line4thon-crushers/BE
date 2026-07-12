@@ -1,5 +1,7 @@
 package line4thon.boini.presenter.pdf.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -13,19 +15,25 @@ import java.util.UUID;
 import line4thon.boini.global.common.exception.CustomException;
 import line4thon.boini.global.config.AppProperties;
 import line4thon.boini.presenter.image.service.SlideNoteService;
+import line4thon.boini.presenter.pdf.dto.FontEntry;
 import line4thon.boini.presenter.pdf.dto.SlideNoteDraft;
 import line4thon.boini.presenter.pdf.dto.request.ChunkUploadRequest;
 import line4thon.boini.presenter.pdf.dto.response.AssemblyCompleteResponse;
 import line4thon.boini.presenter.pdf.dto.response.ChunkReceiveResponse;
 import line4thon.boini.presenter.pdf.dto.response.ChunkUploadResult;
+import line4thon.boini.presenter.pdf.dto.response.NeedsFontsResponse;
 import line4thon.boini.presenter.pdf.exception.PdfErrorCode;
+import line4thon.boini.presenter.pdf.model.FontStatus;
 import line4thon.boini.presenter.pdf.model.PresentationFileType;
+import line4thon.boini.presenter.pdf.service.font.FontUploadValidator;
+import line4thon.boini.presenter.pdf.service.font.PresentationFontAnalysisService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -64,6 +72,9 @@ public class PdfChunkService {
     private final SlideNotesExtractionService slideNotesExtractionService;
     private final SlideNoteService slideNoteService;
     private final S3Client s3Client;
+    private final PresentationFontAnalysisService fontAnalysisService;
+    private final FontUploadValidator fontUploadValidator;
+    private final ObjectMapper objectMapper;
 
     /**
      * 청크 하나를 수신하고 처리합니다. (ChunkUploadController 에서 호출)
@@ -192,7 +203,45 @@ public class PdfChunkService {
             throw new CustomException(PdfErrorCode.ASSEMBLY_FAILED);
         }
 
-        PreparedPresentation prepared = preparePresentationForParsing(assembledPath, fileType);
+        // PPTX 에 한해 폰트 분석을 수행하여 누락 폰트가 있는지 확인합니다.
+        // 누락 폰트가 있으면 변환을 보류하고 발표자에게 폰트 업로드를 요청합니다(AWAITING_FONTS).
+        List<FontEntry> report = fileType == PresentationFileType.PPTX
+            ? fontAnalysisService.analyze(assembledPath)
+            : List.of();
+        boolean hasMissing = report.stream().anyMatch(e -> e.status() == FontStatus.MISSING);
+
+        if (hasMissing) {
+            List<String> missing = report.stream()
+                .filter(e -> e.status() == FontStatus.MISSING).map(FontEntry::name).toList();
+            try {
+                redis.opsForValue().set(stateKey(uploadId), "AWAITING_FONTS", UPLOAD_SESSION_TTL);
+                redis.opsForValue().set(missingFontsKey(uploadId),
+                    objectMapper.writeValueAsString(missing), UPLOAD_SESSION_TTL);
+                redis.opsForValue().set(sourcePathKey(uploadId), assembledPath.toString(), UPLOAD_SESSION_TTL);
+            } catch (JsonProcessingException e) {
+                throw new CustomException(PdfErrorCode.ASSEMBLY_FAILED);
+            }
+            // meta 와 조립된 파일은 finalize 에서 재사용하므로 cleanupRedisKeys 를 호출하지 않습니다.
+            log.info("[조립] 폰트 대기 상태 전환: uploadId={}, missing={}", uploadId, missing);
+            return ChunkUploadResult.needsFonts(NeedsFontsResponse.of(uploadId, report));
+        }
+
+        AssemblyCompleteResponse response = convertSeedAndParse(
+            uploadId, pdfId, roomId, deckId, assembledPath, fileType, request.getFileName(), null);
+        cleanupRedisKeys(uploadId); // Redis 에서 임시 메타 삭제 (임시 파일은 PdfParseService finally 에서 삭제)
+        log.info("[조립] 완료: uploadId={}, pdfId={}, totalPages={}", uploadId, pdfId, response.getTotalPages());
+        return ChunkUploadResult.assembled(response);
+    }
+
+    /**
+     * 변환 → Redis 시딩 → 비동기 파싱 트리거까지의 공통 단계.
+     * 마지막 청크의 빠른 경로(fontDir=null)와 finalize(fontDir=발표자 업로드 폰트) 양쪽에서 재사용됩니다.
+     */
+    private AssemblyCompleteResponse convertSeedAndParse(
+        String uploadId, String pdfId, String roomId, String deckId,
+        Path assembledPath, PresentationFileType fileType, String fileName, Path fontDir) {
+
+        PreparedPresentation prepared = preparePresentationForParsing(assembledPath, fileType, fontDir);
         Path pdfPath = prepared.pdfPath();
 
         // PDFBox 로 페이지 수만 빠르게 확인 (렌더링 없음, 수 ms 수준)
@@ -203,7 +252,7 @@ public class PdfChunkService {
             Duration.between(pageCountStart, Instant.now()).toMillis(), totalPages);
 
         slideNoteService.replaceNotes(roomId, deckId, prepared.notes());
-        uploadDownloadablePdf(roomId, deckId, pdfPath, request.getFileName());
+        uploadDownloadablePdf(roomId, deckId, pdfPath, fileName);
 
         // 방 생성 시 totalPage 는 placeholder(1)로 저장된다(프론트가 업로드 전 createRoom(1) 호출).
         // 실제 페이지 수가 확정된 지금 갱신하지 않으면, audience join 응답의 totalPages 가 1로 남아
@@ -223,18 +272,14 @@ public class PdfChunkService {
         // 렌더링 결과는 PdfSseRegistry 를 통해 프론트로 스트리밍됩니다.
         pdfParseService.parseAndStream(pdfId, roomId, deckId, pdfPath, totalPages);
 
-        cleanupRedisKeys(uploadId); // Redis 에서 임시 메타 삭제 (임시 파일은 PdfParseService finally 에서 삭제)
-
-        log.info("[조립] 완료: uploadId={}, pdfId={}, totalPages={}", uploadId, pdfId, totalPages);
-
-        return ChunkUploadResult.assembled(AssemblyCompleteResponse.builder()
+        return AssemblyCompleteResponse.builder()
             .status("READY")
             .uploadId(uploadId)
             .pdfId(pdfId)
-            .fileName(request.getFileName())
+            .fileName(fileName)
             .totalPages(totalPages)
             .streamUrl("/api/pdf/" + pdfId + "/stream") // 프론트가 SSE 구독할 URL
-            .build());
+            .build();
     }
 
     private void uploadDownloadablePdf(String roomId, String deckId, Path pdfPath, String sourceFileName) {
@@ -316,7 +361,8 @@ public class PdfChunkService {
         }
     }
 
-    private PreparedPresentation preparePresentationForParsing(Path assembledPath, PresentationFileType fileType) {
+    private PreparedPresentation preparePresentationForParsing(
+        Path assembledPath, PresentationFileType fileType, Path fontDir) {
         if (!fileType.requiresConversion()) {
             return new PreparedPresentation(assembledPath, List.of());
         }
@@ -328,7 +374,7 @@ public class PdfChunkService {
             log.warn("[PPT] 발표자 노트 추출 실패, 슬라이드 변환은 계속 진행: file={}", assembledPath, e);
         }
 
-        return new PreparedPresentation(officeConversionService.convertToPdf(assembledPath), notes);
+        return new PreparedPresentation(officeConversionService.convertToPdf(assembledPath, fontDir), notes);
     }
 
     private record PreparedPresentation(Path pdfPath, List<SlideNoteDraft> notes) {
@@ -387,5 +433,96 @@ public class PdfChunkService {
 
     private String metaKey(String uploadId, String field) {
         return META_KEY.formatted(uploadId, field);
+    }
+
+    private String stateKey(String uploadId) { return "pdf:upload:" + uploadId + ":state"; }
+    private String missingFontsKey(String uploadId) { return "pdf:upload:" + uploadId + ":missingFonts"; }
+    private String sourcePathKey(String uploadId) { return "pdf:upload:" + uploadId + ":sourcePath"; }
+
+    /**
+     * AWAITING_FONTS 상태의 업로드 세션에 발표자가 폰트 파일을 업로드합니다.
+     * 저장 후 원본 파일을 재분석하여 갱신된 폰트 리포트를 반환합니다.
+     */
+    public List<FontEntry> storeFonts(String uploadId, List<MultipartFile> fonts) {
+        requireAwaitingFonts(uploadId);
+        if (fonts.size() > props.getFonts().getMaxCount()) {
+            throw new CustomException(PdfErrorCode.TOO_MANY_FONTS);
+        }
+        Path fontDir = resolveUploadDir(uploadId).resolve("fonts");
+        try {
+            Files.createDirectories(fontDir);
+            long total = directorySize(fontDir);
+            for (MultipartFile font : fonts) {
+                byte[] bytes = font.getBytes();
+                fontUploadValidator.validate(font.getOriginalFilename(), bytes);
+                total += bytes.length;
+                if (total > props.getFonts().getMaxTotalBytes()) {
+                    throw new CustomException(PdfErrorCode.FONT_UPLOAD_TOO_LARGE_TOTAL);
+                }
+                Files.write(fontDir.resolve(safeFontName(font.getOriginalFilename())), bytes);
+            }
+        } catch (IOException e) {
+            log.error("[Font] 폰트 저장 실패: uploadId={}", uploadId, e);
+            throw new CustomException(PdfErrorCode.CHUNK_SAVE_FAILED);
+        }
+        String sourcePath = redis.opsForValue().get(sourcePathKey(uploadId));
+        return sourcePath == null ? List.of() : fontAnalysisService.analyze(Paths.get(sourcePath));
+    }
+
+    /**
+     * AWAITING_FONTS 상태의 업로드 세션을 종료합니다.
+     * proceedWithoutFonts=true 이면 발표자가 업로드한 폰트 없이(폰트 대체 없이) 변환을 진행합니다.
+     */
+    public AssemblyCompleteResponse finalize(String uploadId, boolean proceedWithoutFonts) {
+        requireAwaitingFonts(uploadId);
+        String roomId = redis.opsForValue().get(metaKey(uploadId, "roomId"));
+        String deckId = redis.opsForValue().get(metaKey(uploadId, "deckId"));
+        String fileName = redis.opsForValue().get(metaKey(uploadId, "fileName"));
+        String fileTypeName = redis.opsForValue().get(metaKey(uploadId, "fileType"));
+        String sourcePath = redis.opsForValue().get(sourcePathKey(uploadId));
+        if (roomId == null || deckId == null || fileName == null || fileTypeName == null || sourcePath == null) {
+            throw new CustomException(PdfErrorCode.UPLOAD_SESSION_NOT_FOUND);
+        }
+        PresentationFileType fileType = PresentationFileType.valueOf(fileTypeName);
+        Path fontDir = proceedWithoutFonts ? null : resolveExistingFontDir(uploadId);
+        String pdfId = generatePdfId();
+
+        AssemblyCompleteResponse response = convertSeedAndParse(
+            uploadId, pdfId, roomId, deckId, Paths.get(sourcePath), fileType, fileName, fontDir);
+
+        redis.delete(stateKey(uploadId));
+        redis.delete(missingFontsKey(uploadId));
+        redis.delete(sourcePathKey(uploadId));
+        cleanupRedisKeys(uploadId);
+        log.info("[조립] finalize 완료: uploadId={}, pdfId={}, withFonts={}", uploadId, pdfId, fontDir != null);
+        return response;
+    }
+
+    private void requireAwaitingFonts(String uploadId) {
+        String state = redis.opsForValue().get(stateKey(uploadId));
+        if (state == null) throw new CustomException(PdfErrorCode.UPLOAD_SESSION_NOT_FOUND);
+        if (!"AWAITING_FONTS".equals(state)) throw new CustomException(PdfErrorCode.SESSION_NOT_AWAITING_FONTS);
+    }
+
+    private Path resolveExistingFontDir(String uploadId) {
+        Path fontDir = resolveUploadDir(uploadId).resolve("fonts");
+        return Files.isDirectory(fontDir) ? fontDir : null;
+    }
+
+    private long directorySize(Path dir) throws IOException {
+        if (!Files.exists(dir)) return 0;
+        try (var s = Files.walk(dir)) {
+            return s.filter(Files::isRegularFile).mapToLong(p -> {
+                try { return Files.size(p); } catch (IOException e) { return 0; }
+            }).sum();
+        }
+    }
+
+    private String safeFontName(String original) {
+        String base = original == null ? "font" : original.replace("\\", "/");
+        int slash = base.lastIndexOf('/');
+        if (slash >= 0) base = base.substring(slash + 1);
+        base = base.replaceAll("[\\p{Cntrl}:*?\"<>|]+", "_").trim();
+        return base.isBlank() ? "font-" + UUID.randomUUID() : base;
     }
 }
