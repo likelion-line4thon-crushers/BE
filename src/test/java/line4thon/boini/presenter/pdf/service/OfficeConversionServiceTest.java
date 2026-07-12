@@ -98,6 +98,37 @@ class OfficeConversionServiceTest {
         assertThat(service.startedCommand()).isNull();
     }
 
+    @Test
+    void setsFontconfigEnvWhenFontDirHasFonts() throws IOException {
+        AppProperties props = new AppProperties();
+        Path executable = tempDir.resolve("bin/soffice-test");
+        props.getOffice().setSofficePath(executable.toString());
+        FakeOfficeConversionService service = new FakeOfficeConversionService(props, 0, true, false)
+            .withExecutable(executable);
+        Path source = Files.writeString(tempDir.resolve("deck.pptx"), "demo");
+        Path fontDir = Files.createDirectories(tempDir.resolve("fonts"));
+        Files.writeString(fontDir.resolve("MyFont.ttf"), "fontbytes");
+
+        service.convertToPdf(source, fontDir);
+
+        assertThat(service.fontconfigEnv()).isNotNull();
+        assertThat(Path.of(service.fontconfigEnv())).exists();
+    }
+
+    @Test
+    void doesNotSetFontconfigEnvWhenNoFontDir() throws IOException {
+        AppProperties props = new AppProperties();
+        Path executable = tempDir.resolve("bin/soffice-test");
+        props.getOffice().setSofficePath(executable.toString());
+        FakeOfficeConversionService service = new FakeOfficeConversionService(props, 0, true, false)
+            .withExecutable(executable);
+        Path source = Files.writeString(tempDir.resolve("deck.pptx"), "demo");
+
+        service.convertToPdf(source);
+
+        assertThat(service.fontconfigEnv()).isNull();
+    }
+
     private static class FakeOfficeConversionService extends OfficeConversionService {
         private final int exitCode;
         private final boolean createPdf;
@@ -105,6 +136,8 @@ class OfficeConversionServiceTest {
         private final Set<Path> executables = new HashSet<>();
         private String pathEnv;
         private String startedCommand;
+        private String fontconfigEnv;
+        String fontconfigEnv() { return fontconfigEnv; }
 
         FakeOfficeConversionService(
             AppProperties props,
@@ -142,6 +175,7 @@ class OfficeConversionServiceTest {
                 Files.createDirectories(outputDir);
                 Files.writeString(outputDir.resolve(name), "%PDF");
             }
+            fontconfigEnv = builder.environment().get("FONTCONFIG_FILE");
             return new FakeProcess(exitCode);
         }
 
