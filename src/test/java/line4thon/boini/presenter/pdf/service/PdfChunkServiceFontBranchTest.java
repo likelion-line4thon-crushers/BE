@@ -82,7 +82,7 @@ class PdfChunkServiceFontBranchTest {
     @Test
     void storeFontsRejectsWhenStateNotAwaiting() {
         stateReturns("READY");
-        assertThatThrownBy(() -> service.storeFonts(VALID_ID, List.of()))
+        assertThatThrownBy(() -> service.storeFonts(VALID_ID, List.of(), null))
             .isInstanceOf(CustomException.class)
             .satisfies(t -> assertThat(codeOf(t)).isEqualTo(PdfErrorCode.SESSION_NOT_AWAITING_FONTS));
     }
@@ -109,7 +109,7 @@ class PdfChunkServiceFontBranchTest {
         // 상태를 AWAITING_FONTS 로 스텁해, requireAwaitingFonts 가 아니라
         // requireValidUploadId 가 먼저 걸러내는지를 검증한다(가드 제거 시 이 테스트는 실패해야 한다).
         when(ops.get("pdf:upload:../etc:state")).thenReturn("AWAITING_FONTS");
-        assertThatThrownBy(() -> service.storeFonts("../etc", List.of()))
+        assertThatThrownBy(() -> service.storeFonts("../etc", List.of(), null))
             .isInstanceOf(CustomException.class)
             .satisfies(t -> assertThat(codeOf(t)).isEqualTo(PdfErrorCode.UPLOAD_SESSION_NOT_FOUND));
     }
@@ -144,7 +144,7 @@ class PdfChunkServiceFontBranchTest {
 
         MockMultipartFile incoming = new MockMultipartFile("fonts", "a.ttf", "font/ttf", new byte[] {1});
 
-        assertThatThrownBy(() -> localService.storeFonts(VALID_ID, List.of(incoming)))
+        assertThatThrownBy(() -> localService.storeFonts(VALID_ID, List.of(incoming), null))
             .isInstanceOf(CustomException.class)
             .satisfies(t -> assertThat(codeOf(t)).isEqualTo(PdfErrorCode.TOO_MANY_FONTS));
     }

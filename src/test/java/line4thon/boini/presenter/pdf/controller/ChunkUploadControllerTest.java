@@ -15,6 +15,7 @@ import line4thon.boini.global.jwt.util.JwtUtil;
 import line4thon.boini.presenter.pdf.dto.FontEntry;
 import line4thon.boini.presenter.pdf.dto.response.AssemblyCompleteResponse;
 import line4thon.boini.presenter.pdf.dto.response.ChunkUploadResult;
+import line4thon.boini.presenter.pdf.dto.response.FontUploadResponse;
 import line4thon.boini.presenter.pdf.dto.response.NeedsFontsResponse;
 import line4thon.boini.presenter.pdf.model.FontStatus;
 import line4thon.boini.presenter.pdf.service.PdfChunkService;
@@ -38,10 +39,23 @@ class ChunkUploadControllerTest {
 
     @Test
     void uploadFontsReturns200() throws Exception {
-        when(pdfChunkService.storeFonts(eq("u1"), any())).thenReturn(List.of());
+        when(pdfChunkService.storeFonts(eq("u1"), any(), any()))
+            .thenReturn(new FontUploadResponse(List.of(), null, null, List.of()));
         mvc.perform(multipart("/api/upload/u1/fonts")
                 .file(new MockMultipartFile("fonts", "a.ttf", "font/ttf", new byte[] {1})))
             .andExpect(status().isOk());
+    }
+
+    @Test
+    void uploadFontsReportsMatchAgainstTargetFont() throws Exception {
+        when(pdfChunkService.storeFonts(eq("u1"), any(), eq("Malgun Gothic")))
+            .thenReturn(new FontUploadResponse(List.of(), false, "Malgun Gothic", List.of("Yoon Mokryn")));
+        mvc.perform(multipart("/api/upload/u1/fonts")
+                .file(new MockMultipartFile("fonts", "a.ttf", "font/ttf", new byte[] {1}))
+                .param("targetFont", "Malgun Gothic"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.matched").value(false))
+            .andExpect(jsonPath("$.data.uploadedFamilies[0]").value("Yoon Mokryn"));
     }
 
     @Test

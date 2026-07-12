@@ -4,11 +4,11 @@ import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import java.util.List;
 import line4thon.boini.global.common.response.BaseResponse;
-import line4thon.boini.presenter.pdf.dto.FontEntry;
 import line4thon.boini.presenter.pdf.dto.request.ChunkUploadRequest;
 import line4thon.boini.presenter.pdf.dto.request.FinalizeRequest;
 import line4thon.boini.presenter.pdf.dto.response.AssemblyCompleteResponse;
 import line4thon.boini.presenter.pdf.dto.response.ChunkUploadResult;
+import line4thon.boini.presenter.pdf.dto.response.FontUploadResponse;
 import line4thon.boini.presenter.pdf.service.PdfChunkService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -81,9 +81,11 @@ public class ChunkUploadController {
     @PostMapping(value = "/{uploadId}/fonts", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "폰트 업로드", description = "AWAITING_FONTS 상태의 업로드 세션에 폰트 파일을 추가합니다.")
     public ResponseEntity<BaseResponse<?>> uploadFonts(
-        @PathVariable String uploadId, @RequestParam("fonts") List<MultipartFile> fonts) {
-        List<FontEntry> report = pdfChunkService.storeFonts(uploadId, fonts);
-        return ResponseEntity.ok(BaseResponse.success(report));
+        @PathVariable String uploadId,
+        @RequestParam("fonts") List<MultipartFile> fonts,
+        @RequestParam(value = "targetFont", required = false) String targetFont) {
+        FontUploadResponse result = pdfChunkService.storeFonts(uploadId, fonts, targetFont);
+        return ResponseEntity.ok(BaseResponse.success(result));
     }
 
     @PostMapping(value = "/{uploadId}/finalize", consumes = MediaType.APPLICATION_JSON_VALUE)
