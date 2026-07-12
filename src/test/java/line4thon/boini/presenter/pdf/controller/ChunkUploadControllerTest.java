@@ -40,7 +40,7 @@ class ChunkUploadControllerTest {
     @Test
     void uploadFontsReturns200() throws Exception {
         when(pdfChunkService.storeFonts(eq("u1"), any(), any()))
-            .thenReturn(new FontUploadResponse(List.of(), null, null, List.of()));
+            .thenReturn(new FontUploadResponse(null, null, List.of()));
         mvc.perform(multipart("/api/upload/u1/fonts")
                 .file(new MockMultipartFile("fonts", "a.ttf", "font/ttf", new byte[] {1})))
             .andExpect(status().isOk());
@@ -49,7 +49,7 @@ class ChunkUploadControllerTest {
     @Test
     void uploadFontsReportsMatchAgainstTargetFont() throws Exception {
         when(pdfChunkService.storeFonts(eq("u1"), any(), eq("Malgun Gothic")))
-            .thenReturn(new FontUploadResponse(List.of(), false, "Malgun Gothic", List.of("Yoon Mokryn")));
+            .thenReturn(new FontUploadResponse(false, "Malgun Gothic", List.of("Yoon Mokryn")));
         mvc.perform(multipart("/api/upload/u1/fonts")
                 .file(new MockMultipartFile("fonts", "a.ttf", "font/ttf", new byte[] {1}))
                 .param("targetFont", "Malgun Gothic"))

@@ -448,15 +448,15 @@ public class PdfChunkService {
 
     /**
      * AWAITING_FONTS 상태의 업로드 세션에 발표자가 폰트 파일을 업로드합니다.
-     * 저장 후 원본 파일을 재분석하여 갱신된 폰트 리포트를 반환합니다.
+     * 저장 후, targetFont 를 지정했으면 "방금 올린 파일이 그 요구 폰트와 일치하는지"만 반환합니다.
+     * (전체 폰트 리포트를 재분석하지 않으므로 개별 폰트 검증에 가볍다.)
      */
     public line4thon.boini.presenter.pdf.dto.response.FontUploadResponse storeFonts(
         String uploadId, List<MultipartFile> fonts, String targetFont) {
         requireValidUploadId(uploadId);
         requireAwaitingFonts(uploadId);
         Path fontDir = resolveUploadDir(uploadId).resolve("fonts");
-        // 방금 업로드한 파일들의 패밀리명(정규화) — targetFont 일치 판정에 사용.
-        Set<String> justUploadedNormalized = new HashSet<>();
+        Set<String> uploadedNormalized = new HashSet<>();
         List<String> uploadedFamilies = new java.util.ArrayList<>();
         try {
             Files.createDirectories(fontDir);
@@ -476,7 +476,7 @@ public class PdfChunkService {
                 Files.write(fontDir.resolve(safeFontName(font.getOriginalFilename())), bytes);
                 String family = Font.createFont(Font.TRUETYPE_FONT, new ByteArrayInputStream(bytes)).getFamily();
                 uploadedFamilies.add(family);
-                justUploadedNormalized.add(FontNames.normalize(family));
+                uploadedNormalized.add(FontNames.normalize(family));
             }
         } catch (IOException e) {
             log.error("[Font] 폰트 저장 실패: uploadId={}", uploadId, e);
@@ -487,36 +487,12 @@ public class PdfChunkService {
             throw new CustomException(PdfErrorCode.INVALID_FONT_FILE);
         }
 
-        // 리포트는 이번 배치만이 아니라 지금까지 업로드된 모든 폰트를 반영한다(개별 업로드 누적).
-        Set<String> allUploadedNormalized = normalizedFamiliesInDir(fontDir);
-        // targetFont 를 지정했으면, 방금 업로드한 파일이 그 요구 폰트와 실제로 일치하는지 검증한다.
+        // 전체 리포트 재분석(POI + fc-match) 없이, 방금 올린 파일이 요구 폰트와 일치하는지만 판정한다.
         Boolean matched = (targetFont == null || targetFont.isBlank())
             ? null
-            : justUploadedNormalized.contains(FontNames.normalize(targetFont));
-
-        String sourcePath = redis.opsForValue().get(sourcePathKey(uploadId));
-        List<FontEntry> report = sourcePath == null ? List.of()
-            : fontAnalysisService.analyze(Paths.get(sourcePath), allUploadedNormalized);
+            : uploadedNormalized.contains(FontNames.normalize(targetFont));
         return new line4thon.boini.presenter.pdf.dto.response.FontUploadResponse(
-            report, matched, targetFont, uploadedFamilies);
-    }
-
-    /** 업로드 폴더에 저장된 모든 폰트 파일의 패밀리명(정규화)을 모은다. */
-    private Set<String> normalizedFamiliesInDir(Path fontDir) {
-        Set<String> out = new HashSet<>();
-        if (!Files.isDirectory(fontDir)) return out;
-        try (java.util.stream.Stream<Path> files = Files.list(fontDir)) {
-            files.filter(Files::isRegularFile).forEach(p -> {
-                try (java.io.InputStream in = Files.newInputStream(p)) {
-                    out.add(FontNames.normalize(Font.createFont(Font.TRUETYPE_FONT, in).getFamily()));
-                } catch (IOException | FontFormatException ignored) {
-                    // 파싱 불가 파일은 무시
-                }
-            });
-        } catch (IOException e) {
-            log.warn("[Font] 업로드 폰트 스캔 실패: {}", fontDir, e);
-        }
-        return out;
+            matched, targetFont, uploadedFamilies);
     }
 
     /**
