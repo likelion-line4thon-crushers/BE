@@ -21,7 +21,15 @@ public enum PdfErrorCode implements BaseErrorCode {
     // 파싱
     PDF_PARSE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "P021", "PDF 파싱에 실패했습니다."),
     PAGE_RENDER_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "P022", "페이지 렌더링에 실패했습니다."),
-    OFFICE_CONVERSION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "P023", "PPT/PPTX 파일을 PDF로 변환하지 못했습니다.");
+    OFFICE_CONVERSION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "P023", "PPT/PPTX 파일을 PDF로 변환하지 못했습니다."),
+
+    // 폰트 업로드
+    INVALID_FONT_FILE(HttpStatus.BAD_REQUEST, "P031", "유효하지 않은 폰트 파일입니다."),
+    FONT_TOO_LARGE(HttpStatus.BAD_REQUEST, "P032", "폰트 파일 크기가 허용 범위를 초과했습니다."),
+    TOO_MANY_FONTS(HttpStatus.BAD_REQUEST, "P033", "업로드 가능한 폰트 개수를 초과했습니다."),
+    FONT_UPLOAD_TOO_LARGE_TOTAL(HttpStatus.BAD_REQUEST, "P034", "업로드한 폰트 총 용량이 허용 범위를 초과했습니다."),
+    SESSION_NOT_AWAITING_FONTS(HttpStatus.CONFLICT, "P035", "폰트 대기 상태가 아닌 업로드 세션입니다."),
+    UPLOAD_SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "P036", "업로드 세션을 찾을 수 없습니다.");
 
     private final HttpStatus status;
     private final String code;

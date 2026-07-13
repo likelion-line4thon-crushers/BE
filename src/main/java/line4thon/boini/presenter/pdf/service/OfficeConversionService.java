@@ -29,6 +29,10 @@ public class OfficeConversionService {
     );
 
     public Path convertToPdf(Path sourceFile) {
+        return convertToPdf(sourceFile, null);
+    }
+
+    public Path convertToPdf(Path sourceFile, Path fontDir) {
         Path outputDir = sourceFile.getParent().resolve("converted");
         Path userProfile = sourceFile.getParent().resolve("lo-profile-" + UUID.randomUUID());
         try {
@@ -50,6 +54,8 @@ public class OfficeConversionService {
             ));
             builder.redirectErrorStream(true);
             builder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+
+            applyFontconfig(builder, sourceFile.getParent(), fontDir);
 
             Process process = start(builder);
             boolean finished = waitFor(process, Duration.ofSeconds(props.getOffice().getConversionTimeoutSeconds()));
@@ -160,6 +166,26 @@ public class OfficeConversionService {
 
     protected String getPathEnv() {
         return System.getenv("PATH");
+    }
+
+    private void applyFontconfig(ProcessBuilder builder, Path workDir, Path fontDir) throws IOException {
+        if (fontDir == null || !Files.isDirectory(fontDir)) return;
+        try (var stream = Files.list(fontDir)) {
+            if (stream.findAny().isEmpty()) return;
+        }
+        Path cacheDir = Files.createDirectories(workDir.resolve("fc-cache-" + UUID.randomUUID()));
+        Path conf = workDir.resolve("fonts-" + UUID.randomUUID() + ".conf");
+        String xml = """
+            <?xml version="1.0"?>
+            <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+            <fontconfig>
+              <include ignore_missing="yes">/etc/fonts/fonts.conf</include>
+              <dir>%s</dir>
+              <cachedir>%s</cachedir>
+            </fontconfig>
+            """.formatted(fontDir.toAbsolutePath(), cacheDir.toAbsolutePath());
+        Files.writeString(conf, xml);
+        builder.environment().put("FONTCONFIG_FILE", conf.toAbsolutePath().toString());
     }
 
     private String stripExtension(String fileName) {

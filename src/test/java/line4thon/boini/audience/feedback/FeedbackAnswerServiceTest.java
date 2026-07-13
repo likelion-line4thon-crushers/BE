@@ -34,15 +34,15 @@ class FeedbackAnswerServiceTest {
   @Test
   void savesAnswers() {
     FeedbackAnswersResponse resp =
-        service.submit("room1", req("aud1", new AnswerItem(10L, "좋았어요"), new AnswerItem(11L, "별로")));
+        service.submit("room1", "aud1", req("aud1", new AnswerItem(10L, "좋았어요"), new AnswerItem(11L, "별로")));
     assertThat(resp.getAnswers()).hasSize(2);
     assertThat(repository.findByRoomIdAndAudienceId("room1", "aud1")).hasSize(2);
   }
 
   @Test
   void resubmitReplacesPreviousAnswers() {
-    service.submit("room1", req("aud1", new AnswerItem(10L, "first")));
-    service.submit("room1", req("aud1", new AnswerItem(10L, "second"), new AnswerItem(11L, "more")));
+    service.submit("room1", "aud1", req("aud1", new AnswerItem(10L, "first")));
+    service.submit("room1", "aud1", req("aud1", new AnswerItem(10L, "second"), new AnswerItem(11L, "more")));
     assertThat(repository.findByRoomIdAndAudienceId("room1", "aud1")).hasSize(2);
     assertThat(repository.findByRoomIdAndAudienceId("room1", "aud1"))
         .extracting(FeedbackAnswerEntity::getAnswerText)
@@ -52,21 +52,21 @@ class FeedbackAnswerServiceTest {
 
   @Test
   void blankRoomIdRejected() {
-    assertThatThrownBy(() -> service.submit("  ", req("aud1", new AnswerItem(10L, "x"))))
+    assertThatThrownBy(() -> service.submit("  ", "aud1", req("aud1", new AnswerItem(10L, "x"))))
         .isInstanceOf(CustomException.class);
   }
 
   @Test
   void blankAudienceIdRejected() {
-    assertThatThrownBy(() -> service.submit("room1", req("  ", new AnswerItem(10L, "x"))))
+    assertThatThrownBy(() -> service.submit("room1", "  ", req("  ", new AnswerItem(10L, "x"))))
         .isInstanceOf(CustomException.class);
   }
 
   @Test
   void emptyAnswersAccepted() {
-    assertThatCode(() -> service.submit("room1", req("aud1"))).doesNotThrowAnyException();
+    assertThatCode(() -> service.submit("room1", "aud1", req("aud1"))).doesNotThrowAnyException();
 
-    FeedbackAnswersResponse resp = service.submit("room1", req("aud1"));
+    FeedbackAnswersResponse resp = service.submit("room1", "aud1", req("aud1"));
     assertThat(resp.getAnswers()).isEmpty();
     assertThat(repository.findByRoomIdAndAudienceId("room1", "aud1")).isEmpty();
   }

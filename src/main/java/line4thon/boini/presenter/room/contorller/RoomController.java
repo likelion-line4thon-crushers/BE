@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import line4thon.boini.audience.feedback.entity.FeedbackEntity;
+import line4thon.boini.audience.feedback.repository.FeedbackAnswerRepository;
 import line4thon.boini.audience.feedback.repository.FeedbackRepository;
 import line4thon.boini.audience.room.dto.request.LeaveRoomRequest;
 import line4thon.boini.audience.room.dto.response.JoinResponse;
@@ -64,6 +65,7 @@ public class RoomController {
   private final JwtService jwtService;
   private final SimpMessagingTemplate messagingTemplate;
   private final FeedbackRepository feedbackRepository;
+  private final FeedbackAnswerRepository feedbackAnswerRepository;
   private final S3Client s3Client;
   private final AppProperties props;
 
@@ -331,15 +333,28 @@ public class RoomController {
       return false;
     }
 
-    return feedbackRepository.findByRoomIdAndAudienceIdOrderByCreatedAtDesc(roomId, audienceId).stream()
-        .anyMatch(this::hasRatingAndWrittenFeedback);
+    var feedbacks =
+        feedbackRepository.findByRoomIdAndAudienceIdOrderByCreatedAtDesc(roomId, audienceId);
+
+    // 레거시(질문 없는) 후기: 별점 + 코멘트가 모두 채워진 단일 후기.
+    if (feedbacks.stream().anyMatch(this::hasRatingAndWrittenFeedback)) {
+      return true;
+    }
+
+    // 발표자가 커스텀 질문을 사용하는 경우: 별점은 제출되지만 comment 는 비어 있고,
+    // 실제 주관식 답변은 feedback_answers 에 저장된다. 이 경우도 제출 완료로 인정한다.
+    boolean hasRating = feedbacks.stream().anyMatch(this::hasValidRating);
+    return hasRating && feedbackAnswerRepository.existsByRoomIdAndAudienceId(roomId, audienceId);
   }
 
   private boolean hasRatingAndWrittenFeedback(FeedbackEntity feedback) {
-    return feedback.getRating() >= 1
-        && feedback.getRating() <= 5
+    return hasValidRating(feedback)
         && feedback.getComment() != null
         && !feedback.getComment().isBlank();
+  }
+
+  private boolean hasValidRating(FeedbackEntity feedback) {
+    return feedback.getRating() >= 1 && feedback.getRating() <= 5;
   }
 
   private String contentDisposition(String roomId) {
