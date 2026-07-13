@@ -227,6 +227,11 @@ public class PdfChunkService {
                 redis.opsForValue().set(missingFontsKey(uploadId),
                     objectMapper.writeValueAsString(missing), UPLOAD_SESSION_TTL);
                 redis.opsForValue().set(sourcePathKey(uploadId), assembledPath.toString(), UPLOAD_SESSION_TTL);
+                // 메타 키(roomId/deckId/fileName/fileType/totalChunks)는 첫 청크에서 setIfAbsent 로만 TTL 이
+                // 걸려 최초 청크 도착 시점 기준으로 만료된다. 여기서 state/sourcePath 만 갱신하면, 발표자가
+                // 폰트 업로드를 오래 끌 경우 finalize() 시점에 state 는 살아있는데 메타만 먼저 만료돼
+                // UPLOAD_SESSION_NOT_FOUND 가 날 수 있으므로, 대기 전환 시 메타 키 TTL 도 함께 갱신한다.
+                refreshMetaTtl(uploadId);
             } catch (JsonProcessingException e) {
                 throw new CustomException(PdfErrorCode.ASSEMBLY_FAILED);
             }
@@ -403,6 +408,16 @@ public class PdfChunkService {
             log.error("[PDF] 페이지 수 확인 실패: uploadId={}", uploadId, e);
             throw new CustomException(PdfErrorCode.PDF_PARSE_FAILED);
         }
+    }
+
+    // AWAITING_FONTS 대기 전환 시 메타 키 TTL 을 state/sourcePath 와 동일하게 갱신한다.
+    // 메타는 첫 청크에서 setIfAbsent 로만 TTL 이 걸리므로, 갱신하지 않으면 finalize 전에 먼저 만료될 수 있다.
+    private void refreshMetaTtl(String uploadId) {
+        redis.expire(metaKey(uploadId, "roomId"), UPLOAD_SESSION_TTL);
+        redis.expire(metaKey(uploadId, "deckId"), UPLOAD_SESSION_TTL);
+        redis.expire(metaKey(uploadId, "fileName"), UPLOAD_SESSION_TTL);
+        redis.expire(metaKey(uploadId, "totalChunks"), UPLOAD_SESSION_TTL);
+        redis.expire(metaKey(uploadId, "fileType"), UPLOAD_SESSION_TTL);
     }
 
     // 조립 완료 후 Redis 임시 키 정리
