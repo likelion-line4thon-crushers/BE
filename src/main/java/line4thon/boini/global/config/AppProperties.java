@@ -17,6 +17,7 @@ public class AppProperties {
   private Pdf pdf = new Pdf();
   private Office office = new Office();
   private FastApi fastApi = new FastApi();
+  private Fonts fonts = new Fonts();
 
   @Getter @Setter
   public static class Room {
@@ -56,10 +57,19 @@ public class AppProperties {
   public static class Office {
     private String sofficePath = "soffice";
     private long conversionTimeoutSeconds = 60;
+    private String fcListPath = "fc-list";
+    private String fcMatchPath = "fc-match";
   }
 
   @Getter @Setter
   public static class FastApi {
     private String baseUrl = "http://localhost:8000";
+  }
+
+  @Getter @Setter
+  public static class Fonts {
+    private long maxFileBytes = 15_728_640L;  // 15 MB per font
+    private int maxCount = 20;
+    private long maxTotalBytes = 62_914_560L; // 60 MB per deck (max upload at once)
   }
 }

@@ -10,8 +10,10 @@ server.port=8080
 
 # ===== 파일 업로드(청크) =====
 # 프론트는 2MB 단위 청크 전송. Spring 기본 1MB면 청크마다 터지므로 상향.
-spring.servlet.multipart.max-file-size=10MB
-spring.servlet.multipart.max-request-size=15MB
+# 폰트 파일 1개는 최대 15MB(app.fonts.max-file-bytes)이므로 max-file-size 를 20MB 로 둔다.
+# 폰트 업로드는 한 요청에 최대 60MB(app.fonts.max-total-bytes)까지 오므로 request 상한을 64MB 로 둔다(멀티파트 오버헤드 여유).
+spring.servlet.multipart.max-file-size=20MB
+spring.servlet.multipart.max-request-size=64MB
 
 # ===== MySQL (필수) =====
 # 로컬 도커: localhost:3306 / db=boini / user=root
@@ -67,7 +69,12 @@ app.s3.cloudfront-domain=
 # app.pdf.max-chunk-size-bytes=2097152
 # app.pdf.can-start-session-after-pages=10
 # app.office.soffice-path=soffice
+# app.office.fc-list-path=fc-list
+# app.office.fc-match-path=fc-match
 # macOS LibreOffice app install path:
 # app.office.soffice-path=/Applications/LibreOffice.app/Contents/MacOS/soffice
 # app.office.conversion-timeout-seconds=60
+# app.fonts.max-file-bytes=15728640
+# app.fonts.max-count=20
+# app.fonts.max-total-bytes=62914560
 # server.servlet.context-path=

@@ -40,3 +40,9 @@ src/main/resources/application.properties
 ### Claude ###
 .claude/
 .omc/
+
+### Compiled class files (should never be committed) ###
+*.class
+
+### Local docs (not tracked) ###
+docs/
